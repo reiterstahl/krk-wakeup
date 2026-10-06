@@ -30,4 +30,5 @@ image = image.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
 image.save(ROOT / "assets" / "app.ico", sizes=[(16, 16), (24, 24),
                                            (32, 32), (48, 48), (64, 64),
                                            (256, 256)])
+image.save(ROOT / "assets" / "app-icon.png")
 image.save("/tmp/krk-wakeup-icon-preview.png")

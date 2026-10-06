@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
+  <img src="assets/app-icon.png" alt="Ícono de KRK Wakeup" width="96" height="96">
+</p>
+
+<p align="center">
+  <a href="README.md">Español</a> · <a href="README.en.md">English</a>
 </p>
 
 <p align="center">
@@ -14,6 +18,10 @@
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
 > **Estado:** prototipo funcional. La compilación y el arranque están comprobados en el flujo de Windows; la eficacia del pulso y su audibilidad se están probando con los parlantes reales.
+
+<p align="center">
+  <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
+</p>
 
 <p align="center">
   <img src="assets/ui-compact.png" alt="Ventana compacta de KRK Wakeup con tema oscuro" width="420">
