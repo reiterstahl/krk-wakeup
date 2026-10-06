@@ -263,7 +263,7 @@ void LoadConfig() {
     g_config.idleSeconds = ReadNumber(L"IdleSeconds", 900, 60, 14400);
     g_config.intervalSeconds = ReadNumber(L"IntervalSeconds", 300, 10, 3600);
     g_config.durationMs = ReadNumber(L"DurationMs", 1000, 100, 5000);
-    g_config.frequencyHz = ReadNumber(L"FrequencyHz", 440, 80, 15000);
+    g_config.frequencyHz = ReadNumber(L"FrequencyHz", 440, 10, 15000);
     g_config.levelPercent = ReadNumber(L"LevelPercent", 1, 1, 10);
     g_config.enabled = ReadNumber(L"Enabled", 1, 0, 1) == 1;
     g_config.startup = ReadNumber(L"Startup", 0, 0, 1) == 1;
@@ -405,8 +405,8 @@ bool SaveFromWindow(bool manualTestFollows = false) {
         return false;
     }
     if (!ParseUnsigned(ReadText(GetDlgItem(g_window, kFrequency)), candidate.frequencyHz) ||
-        candidate.frequencyHz < 80 || candidate.frequencyHz > 15000) {
-        ShowInputError(L"La frecuencia debe estar entre 80 y 15000 Hz.");
+        candidate.frequencyHz < 10 || candidate.frequencyHz > 15000) {
+        ShowInputError(L"La frecuencia debe estar entre 10 y 15000 Hz.");
         return false;
     }
     if (!ParseUnsigned(ReadText(GetDlgItem(g_window, kLevel)), candidate.levelPercent) ||

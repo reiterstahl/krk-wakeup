@@ -54,6 +54,8 @@ The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → K
 
 Time fields use `mm:ss`. **Reposo estimado** (Estimated standby) is a calibration reference; it does not change the KRK speakers' internal timer. **Intervalo entre pulsos** (Pulse interval) controls when the app sends audio. The app warns you if the interval equals or exceeds the estimated standby time.
 
+**Frecuencia** (Frequency) accepts **10 to 15000 Hz**. To try a low frequency, use **Probar pulso** (Test pulse), which plays your configured settings. **Probar tono** (Test tone) remains the fixed audible test at 440 Hz. Low frequencies are experimental: their effectiveness at preventing standby still needs to be checked on the GoAux.
+
 If the GoAux still enter standby despite a five-minute pulse interval, first use **Probar tono** to check the audio path. Then try a **3%** digital pulse level and **2000 ms** duration while keeping the five-minute interval. If they still go to sleep, try **5%** and observe at least two full standby periods. Lower the level if it becomes annoying. KRK does not publish the internal detection threshold in its manual, so these settings are test suggestions, not a guarantee. Also check that neither Windows nor the SMSL SU-1 is muted.
 
 **Locking Windows with Win + L** leaves the utility running while the computer remains awake. If Windows enters sleep or hibernation, desktop processes pause and pulses resume when the computer wakes. See [Microsoft's sleep documentation](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).

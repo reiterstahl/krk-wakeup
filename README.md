@@ -54,6 +54,8 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 
 Los campos de tiempo usan `mm:ss`. **Reposo estimado** sirve de referencia para calibrar; no modifica el temporizador interno de los KRK. **Intervalo entre pulsos** controla el envío real. Si el intervalo iguala o supera el reposo estimado, la app muestra un aviso.
 
+**Frecuencia** acepta de **10 a 15000 Hz**. Para ensayar una frecuencia baja, usa **Probar pulso**, que reproduce tus ajustes. **Probar tono** sigue siendo la prueba audible fija de 440 Hz. Las frecuencias bajas son experimentales: su eficacia para evitar el reposo aún debe comprobarse en los GoAux.
+
 Si los GoAux siguen entrando en reposo pese a los pulsos de 5 minutos, comprueba primero con **Probar tono** que la ruta hasta los parlantes funciona. Después prueba el pulso con un nivel digital de **3 %** y una duración de **2000 ms**, manteniendo los 5 minutos entre pulsos. Si sigue sin funcionar, prueba **5 %** y observa al menos dos periodos completos de reposo. Reduce el nivel si se vuelve molesto. El umbral interno de detección de los GoAux no está publicado en su manual, así que estos valores son una propuesta de prueba, no una garantía. También revisa que Windows y el SMSL SU-1 no estén silenciados.
 
 **Al bloquear Windows con Win + L**, la utilidad sigue ejecutándose mientras el equipo permanezca encendido. Si Windows entra en suspensión o hibernación, los procesos de escritorio se pausan y los pulsos se reanudan al volver. [Documentación de Microsoft sobre suspensión](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
