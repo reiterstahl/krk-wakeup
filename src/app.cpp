@@ -601,7 +601,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     LoadConfig();
     g_worker = std::make_unique<PulseWorker>(g_config);
     g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
-    g_icon = LoadIconW(nullptr, IDI_APPLICATION);
+    g_icon = LoadIconW(instance, MAKEINTRESOURCEW(101));
+    if (!g_icon) g_icon = LoadIconW(nullptr, IDI_APPLICATION);
     WNDCLASSW klass = {};
     klass.lpfnWndProc = WindowProcedure;
     klass.hInstance = instance;

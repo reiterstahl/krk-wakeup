@@ -1,6 +1,6 @@
 # Plan inicial de KRK Wakeup
 
-Fecha de investigación: 2026-10-06. Estado: propuesta para conversar antes de implementar.
+Fecha de investigación: 2026-10-06. Estado: primer prototipo implementado; eficacia del pulso pendiente de pruebas en GoAux 3.
 
 ## Objetivo
 
@@ -19,7 +19,7 @@ Preferencias confirmadas: icono junto al reloj con menú, inicio con Windows opc
 - Microsoft documenta que se puede abrir una salida concreta mediante su identificador con [IMMDeviceEnumerator::GetDevice](https://learn.microsoft.com/en-us/windows/win32/coreaudio/getting-the-default-device-endpoint-for-stream-routing). Esa será la base del direccionamiento de audio.
 - [IMMDevice::GetId](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdevice-getid) permite guardar el identificador y recuperar la salida después. Se trata como un valor opaco; no se analiza su contenido ni se asume que nunca cambie tras reinstalaciones o cambios de hardware.
 
-El usuario estima un tiempo de reposo de aproximadamente 15 minutos en su configuración. Es una referencia inicial aportada por el usuario, pendiente de medición controlada; no una especificación del fabricante. El repositorio contiene documentación; aún no se han ejecutado pruebas de la aplicación en Windows o GoAux.
+El usuario estima un tiempo de reposo de aproximadamente 15 minutos en su configuración. Es una referencia inicial aportada por el usuario, pendiente de medición controlada; no una especificación del fabricante. El repositorio ya contiene una aplicación para Windows, compilación automática y una prueba de arranque. El comportamiento de reposo sigue pendiente de validación física en GoAux 3.
 
 ## Comportamiento propuesto
 
@@ -66,9 +66,9 @@ Procedimiento propuesto:
 5. Validar durante varias ventanas completas de reposo y repetir con auriculares Bluetooth como salida predeterminada.
 6. Probar por separado la recuperación desde reposo. Prevenir el reposo no garantiza despertar un dispositivo que ya se durmió o se desconectó.
 
-## Arquitectura recomendada, pendiente de cerrar
+## Arquitectura implementada
 
-Una aplicación C++ con Win32 para la interfaz y [WASAPI](https://learn.microsoft.com/en-us/windows/win32/coreaudio/wasapi) para el audio. El [icono de notificación](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw) puede implementarse con Shell_NotifyIcon. Esta propuesta prioriza un ejecutable pequeño y dependencias mínimas.
+La aplicación usa C++ con Win32 para la interfaz y [WASAPI](https://learn.microsoft.com/en-us/windows/win32/coreaudio/wasapi) para el audio. El [icono de notificación](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw) usa Shell_NotifyIcon. La compilación enlaza el runtime de C++ estáticamente para facilitar un ejecutable portable.
 
 Componentes previstos:
 
@@ -78,14 +78,14 @@ Componentes previstos:
 - Planificador: temporizador, pausa y recuperación tras suspensión.
 - Preferencias y diagnóstico: configuración por usuario y registro local acotado de envíos/errores.
 
-La primera distribución propuesta es un ejecutable portable para Windows 11 x64, que es el sistema del usuario. El alcance acordado se limita a 64 bits; x64 se propone como arquitectura inicial, sin asumir cobertura ARM64. Windows 10 se validará después, definiendo las versiones concretas que se soportarán. CMake y compilación automatizada en Windows se plantean para la implementación posterior.
+La primera distribución es un ejecutable portable para Windows 11 x64, que es el sistema del usuario. El alcance acordado se limita a 64 bits; x64 se propone como arquitectura inicial, sin asumir cobertura ARM64. Windows 10 se validará después, definiendo las versiones concretas que se soportarán. La compilación usa CMake y GitHub Actions en Windows.
 
 ## Entregas propuestas
 
-1. **Validación técnica:** una herramienta mínima para seleccionar la salida y probar/calibrar la señal en los KRK del usuario. Comenzar después de cerrar las preguntas de alcance.
-2. **MVP:** icono, configuración, activación/pausa, temporizador y persistencia del dispositivo.
-3. **Robustez:** desconexión, reconexión, cambios de salida predeterminada, suspensión, mute y salida ocupada.
-4. **Distribución:** paquete portable, instrucciones y compilación automatizada. Antes de hacerlo público, elegir licencia y documentar las combinaciones de modelo/conexión realmente verificadas.
+1. **Implementado:** selección de salida, pulso de prueba, icono, configuración, activar/pausar, temporizador y persistencia del dispositivo.
+2. **Implementado:** espera y reintento cuando la salida no está disponible, sin usar otra salida; compilación automatizada y ejecutable portable.
+3. **Pendiente de prueba física:** calibrar la señal y demostrar que evita el reposo, que permanece en el SU-1 al cambiar la salida predeterminada y que se recupera después de desconexión o suspensión.
+4. **Antes de publicar:** verificar Windows 10, elegir licencia y documentar las combinaciones de modelo/conexión realmente probadas.
 
 ## Criterios de aceptación
 
