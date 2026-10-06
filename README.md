@@ -18,19 +18,15 @@
 
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
-> **Estado:** prototipo funcional. La compilación y el arranque están comprobados en el flujo de Windows; la eficacia del pulso y su audibilidad se están probando con los parlantes reales. Una primera prueba del usuario mantuvo los GoAux encendidos unos 45 minutos; faltan pruebas más largas con el perfil exacto documentado.
+> **Estado:** v0.1.0 publicada. La compilación y el arranque pasaron en Windows; la eficacia del pulso sigue en pruebas con los parlantes reales. En una prueba los GoAux permanecieron encendidos unos 45 minutos; con un intervalo de 20 minutos entre pulsos se apagaron. El intervalo de 15 minutos está en evaluación. Aún no hay un perfil eficaz documentado y repetido durante varias horas.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
 </p>
 
-<p align="center">
-  <img src="assets/ui-compact.png" alt="Ventana compacta de KRK Wakeup con tema oscuro" width="420">
-</p>
-
 ## Por qué existe
 
-Los GoAux pueden entrar en reposo cuando llevan un tiempo sin recibir señal. En este equipo, el tiempo observado se estima inicialmente en **15 minutos**. El [manual oficial de KRK](https://cdn.shopify.com/s/files/1/0566/0809/6342/files/KRK-GoAux-Monitor-System-Product-User-Manual.pdf?v=1705178896) explica cómo controlar el reposo manualmente, pero no especifica el intervalo de reposo automático ni el nivel mínimo de señal que lo reinicia. Por eso ambos parámetros se validan en el equipo real.
+Los GoAux pueden entrar en reposo cuando llevan un tiempo sin recibir señal. En el equipo de prueba, el reposo se estimó inicialmente en **unos 15 minutos**; el fallo con un intervalo de 20 minutos confirma que ese intervalo no deja margen suficiente, pero no establece el tiempo exacto de reposo. El [manual oficial de KRK](https://cdn.shopify.com/s/files/1/0566/0809/6342/files/KRK-GoAux-Monitor-System-Product-User-Manual.pdf?v=1705178896) explica cómo controlar el reposo manualmente, pero no especifica el intervalo de reposo automático ni el nivel mínimo de señal que lo reinicia. Por eso ambos parámetros se validan en el equipo real.
 
 La idea es sencilla: mientras la utilidad esté activa, genera un pulso discreto antes de que los parlantes se duerman. El intervalo predeterminado para las pruebas es **5 minutos** y se puede ajustar.
 
@@ -40,7 +36,7 @@ La idea es sencilla: mientras la utilidad esté activa, genera un pulso discreto
 - Salida de audio fija: cambiar la salida predeterminada a auriculares Bluetooth no cambia el destino del pulso.
 - Prueba de tono audible de 3 segundos (440 Hz, 5 % de nivel digital), prueba del pulso configurado, pausa, intervalo configurable y cuenta regresiva del siguiente envío.
 - Ajustes ampliables de reposo estimado, duración, frecuencia y nivel digital de la señal.
-- Inicio opcional con Windows para la cuenta de usuario actual.
+- Inicio opcional al entrar en la cuenta de Windows, sin instalador ni privilegios de administrador.
 - Espera y reintento cuando desaparece la salida seleccionada; nunca redirige los pulsos automáticamente a otra salida.
 
 El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoAux 3**. Windows 10 queda como objetivo de compatibilidad posterior, sujeto a pruebas.
@@ -57,9 +53,15 @@ Los campos de tiempo usan `mm:ss`. **Reposo estimado** sirve de referencia para 
 
 **Frecuencia** acepta de **10 a 15000 Hz**. Para ensayar una frecuencia baja, usa **Probar pulso**, que reproduce tus ajustes. **Probar tono** sigue siendo la prueba audible fija de 440 Hz. Las frecuencias bajas son experimentales: su eficacia para evitar el reposo aún debe comprobarse en los GoAux.
 
-Si los GoAux siguen entrando en reposo pese a los pulsos de 5 minutos, comprueba primero con **Probar tono** que la ruta hasta los parlantes funciona. Después prueba el pulso con un nivel digital de **3 %** y una duración de **2000 ms**, manteniendo los 5 minutos entre pulsos. Si sigue sin funcionar, prueba **5 %** y observa al menos dos periodos completos de reposo. Reduce el nivel si se vuelve molesto. El umbral interno de detección de los GoAux no está publicado en su manual, así que estos valores son una propuesta de prueba, no una garantía. También revisa que Windows y el SMSL SU-1 no estén silenciados.
+Un intervalo de **20 minutos** no evitó el reposo en los GoAux de prueba; **15 minutos** sigue bajo prueba. Para uso provisional, el valor inicial de **5 minutos** deja más margen respecto a los 15 minutos estimados. Si se apagan incluso con un intervalo corto, usa **Probar tono** para confirmar la ruta de audio y ajusta nivel y duración de uno en uno. El umbral de detección de los GoAux no está publicado en su manual. Comprueba también que Windows y el SMSL SU-1 no estén silenciados.
 
 **Al bloquear Windows con Win + L**, la utilidad sigue ejecutándose mientras el equipo permanezca encendido. Si Windows entra en suspensión o hibernación, los procesos de escritorio se pausan y los pulsos se reanudan al volver. [Documentación de Microsoft sobre suspensión](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
+
+## Inicio con Windows
+
+El ejecutable es portable. Extráelo primero a una carpeta donde vaya a permanecer. En la app, abre **Más ajustes**, cambia **Iniciar con Windows** a **Sí** y pulsa **Guardar**. La app guarda la ruta completa del `.exe` en la [clave `Run` de tu usuario](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows lo iniciará cada vez que entres en esa cuenta. No hace falta instalarlo, y la opción viene desactivada inicialmente. El registro de inicio está implementado, pero aún falta comprobarlo tras un nuevo inicio de sesión en el equipo de prueba.
+
+Si después mueves o renombras el ejecutable, desactiva la opción, guarda, vuelve a activarla y guarda de nuevo para registrar la nueva ruta. Puedes desactivar el inicio del mismo modo. La app guarda sus ajustes aparte, en `%LOCALAPPDATA%\KRKWakeup\settings.ini`.
 
 ## Cómo funciona
 
@@ -67,7 +69,7 @@ La aplicación usa la [API de dispositivos de audio de Windows](https://learn.mi
 
 En esta conexión analógica Windows identifica el **SMSL SU-1**, no los parlantes conectados al otro extremo de los RCA. Puede detectar si desaparece el DAC USB, pero no si se retira solo el cable RCA o se apagan los GoAux. Tampoco puede confirmar por software que un pulso haya reiniciado el temporizador interno de los parlantes: eso se comprueba observándolos.
 
-La ventana y el icono usan Win32; el audio, WASAPI; la compilación, CMake y MSVC. El ejecutable enlaza el runtime de C++ estáticamente. Los ajustes se guardan en `%LOCALAPPDATA%\KRKWakeup\settings.ini`; el inicio opcional utiliza `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. La aplicación no requiere privilegios de administrador ni modifica el firmware de los parlantes.
+La ventana y el icono usan Win32; el audio, WASAPI; la compilación, CMake y MSVC. El ejecutable enlaza el runtime de C++ estáticamente. La aplicación no requiere privilegios de administrador ni modifica el firmware de los parlantes.
 
 ## Compilar
 

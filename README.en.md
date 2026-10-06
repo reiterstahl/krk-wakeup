@@ -18,19 +18,15 @@
 
 **KRK Wakeup** is a small Windows utility that sends a short audio signal to an output you choose. It was created to prevent KRK GoAux 3 speakers connected over RCA to an SMSL SU-1 from entering standby during long pauses.
 
-> **Status:** working prototype. The Windows workflow verifies that the app builds and starts. The pulse's effectiveness and audibility are still being tested on the physical speakers. In one initial user test, the GoAux stayed on for about 45 minutes; longer trials with documented settings are still needed.
+> **Status:** v0.1.0 is released. The Windows build and startup check passed; the pulse's effectiveness is still being tested on physical speakers. In one trial the GoAux stayed on for about 45 minutes, but they went to sleep with a 20-minute pulse interval. A 15-minute interval is being tested. No pulse profile has yet been documented and repeated over several hours.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: a short signal to keep your speakers ready" width="100%">
 </p>
 
-<p align="center">
-  <img src="assets/ui-compact.png" alt="Compact KRK Wakeup window with a dark theme" width="420">
-</p>
-
 ## Why it exists
 
-GoAux speakers can enter standby after receiving no signal for some time. In this setup, the initial estimate is **15 minutes**. The [official KRK manual](https://cdn.shopify.com/s/files/1/0566/0809/6342/files/KRK-GoAux-Monitor-System-Product-User-Manual.pdf?v=1705178896) explains how to control standby manually, but does not specify the automatic standby interval or the minimum signal level that resets it. Both need to be checked with the actual speakers.
+GoAux speakers can enter standby after receiving no signal for some time. In this setup, standby was initially estimated at **about 15 minutes**. Failure with a 20-minute pulse interval shows that interval leaves insufficient margin, but does not establish the exact standby time. The [official KRK manual](https://cdn.shopify.com/s/files/1/0566/0809/6342/files/KRK-GoAux-Monitor-System-Product-User-Manual.pdf?v=1705178896) explains how to control standby manually, but does not specify the automatic standby interval or the minimum signal level that resets it. Both need to be checked with the actual speakers.
 
 The idea is simple: while the utility is active, it sends a discreet pulse before the speakers go to sleep. The default test interval is **5 minutes**, and you can change it.
 
@@ -40,7 +36,7 @@ The idea is simple: while the utility is active, it sends a discreet pulse befor
 - A fixed audio output: changing the Windows default output to Bluetooth headphones does not change where the pulse goes.
 - A three-second audible test tone (440 Hz at 5% digital level), a test of the configured pulse, pause, an adjustable interval, and a countdown to the next pulse.
 - Additional settings for estimated standby time, pulse duration, frequency, and digital level.
-- Optional startup with Windows for the current user.
+- Optional startup when the current user signs in to Windows, without an installer or administrator rights.
 - Wait and retry when the selected output disappears; pulses are never redirected automatically to another output.
 
 The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoAux 3**. Windows 10 is a later compatibility goal and still requires testing.
@@ -57,9 +53,15 @@ Time fields use `mm:ss`. **Reposo estimado** (Estimated standby) is a calibratio
 
 **Frecuencia** (Frequency) accepts **10 to 15000 Hz**. To try a low frequency, use **Probar pulso** (Test pulse), which plays your configured settings. **Probar tono** (Test tone) remains the fixed audible test at 440 Hz. Low frequencies are experimental: their effectiveness at preventing standby still needs to be checked on the GoAux.
 
-If the GoAux still enter standby despite a five-minute pulse interval, first use **Probar tono** to check the audio path. Then try a **3%** digital pulse level and **2000 ms** duration while keeping the five-minute interval. If they still go to sleep, try **5%** and observe at least two full standby periods. Lower the level if it becomes annoying. KRK does not publish the internal detection threshold in its manual, so these settings are test suggestions, not a guarantee. Also check that neither Windows nor the SMSL SU-1 is muted.
+A **20-minute** interval did not prevent standby in the tested GoAux; **15 minutes** is still being tested. For now, the default **5-minute** interval leaves more margin relative to the estimated 15-minute standby time. If they go to sleep even with a short interval, use **Probar tono** (Test tone) to confirm the audio route, then change pulse level and duration one at a time. KRK does not publish the GoAux detection threshold in its manual. Also check that neither Windows nor the SMSL SU-1 is muted.
 
 **Locking Windows with Win + L** leaves the utility running while the computer remains awake. If Windows enters sleep or hibernation, desktop processes pause and pulses resume when the computer wakes. See [Microsoft's sleep documentation](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
+
+## Start with Windows
+
+The executable is portable. Extract it to a folder where it will stay. In the app, open **Más ajustes** (More settings), switch **Iniciar con Windows** (Start with Windows) to **Sí** (Yes), and click **Guardar** (Save). The app writes the full `.exe` path to the [current user's `Run` key](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows launches it whenever you sign in to that account. No installer is needed, and this option is off by default. Startup registration is implemented, but it has not yet been checked after a fresh sign-in on the test machine.
+
+If you later move or rename the executable, turn the option off and save, then turn it on and save again to register the new path. You can disable startup the same way. Settings are stored separately at `%LOCALAPPDATA%\KRKWakeup\settings.ini`.
 
 ## How it works
 
@@ -67,7 +69,7 @@ The app uses the [Windows audio device API](https://learn.microsoft.com/en-us/wi
 
 With this analog connection, Windows identifies the **SMSL SU-1**, not the speakers attached to its RCA outputs. The app can detect when the USB DAC disappears, but it cannot detect an unplugged RCA cable or powered-off GoAux speakers. Nor can software confirm that a pulse reset the speakers' internal standby timer: that must be checked on the speakers themselves.
 
-The window and notification area icon use Win32; audio uses WASAPI; builds use CMake and MSVC. The executable links the C++ runtime statically. Settings are stored in `%LOCALAPPDATA%\KRKWakeup\settings.ini`; optional startup uses `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The app needs no administrator privileges and does not modify the speakers' firmware.
+The window and notification area icon use Win32; audio uses WASAPI; builds use CMake and MSVC. The executable links the C++ runtime statically. The app needs no administrator privileges and does not modify the speakers' firmware.
 
 ## Build
 

@@ -1,6 +1,6 @@
 # Plan inicial de KRK Wakeup
 
-Fecha de investigación: 2026-10-06. Estado: primer prototipo implementado; eficacia del pulso pendiente de pruebas en GoAux 3.
+Fecha de investigación: 2026-10-06. Estado: v0.1.0 publicada; una prueba mantuvo los GoAux 3 encendidos unos 45 minutos, mientras que un intervalo de 20 minutos permitió que entraran en reposo. El intervalo de 15 minutos sigue bajo prueba.
 
 ## Objetivo
 
@@ -19,7 +19,7 @@ Preferencias confirmadas: icono junto al reloj con menú, inicio con Windows opc
 - Microsoft documenta que se puede abrir una salida concreta mediante su identificador con [IMMDeviceEnumerator::GetDevice](https://learn.microsoft.com/en-us/windows/win32/coreaudio/getting-the-default-device-endpoint-for-stream-routing). Esa será la base del direccionamiento de audio.
 - [IMMDevice::GetId](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdevice-getid) permite guardar el identificador y recuperar la salida después. Se trata como un valor opaco; no se analiza su contenido ni se asume que nunca cambie tras reinstalaciones o cambios de hardware.
 
-El usuario estima un tiempo de reposo de aproximadamente 15 minutos en su configuración. Es una referencia inicial aportada por el usuario, pendiente de medición controlada; no una especificación del fabricante. El repositorio ya contiene una aplicación para Windows, compilación automática y una prueba de arranque. El comportamiento de reposo sigue pendiente de validación física en GoAux 3.
+El usuario estima un tiempo de reposo de aproximadamente 15 minutos en su configuración. Es una referencia inicial aportada por el usuario, pendiente de medición controlada; no una especificación del fabricante. El repositorio ya contiene una aplicación para Windows, compilación automática y una prueba de arranque. El comportamiento de reposo requiere pruebas más largas y un perfil de señal documentado para GoAux 3.
 
 ## Comportamiento propuesto
 
