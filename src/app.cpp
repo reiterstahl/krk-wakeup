@@ -576,7 +576,7 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
     COLORREF fill = RGB(23, 27, 28);
     COLORREF border = RGB(42, 47, 49);
     COLORREF foreground = RGB(238, 240, 237);
-    const bool on = id == kEnabled && g_config.enabled;
+    const bool on = id == kEnabled && g_config.enabled && !g_config.endpointId.empty();
     const bool selected = (item->itemState & ODS_SELECTED) != 0;
     if (id == kTest || on) {
         fill = selected ? RGB(207, 172, 48) : RGB(241, 204, 73);
@@ -587,7 +587,8 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
     }
     PaintRounded(item->hDC, item->rcItem, fill, border, 10);
     std::wstring label = ReadText(item->hwndItem);
-    if (id == kEnabled) label = g_config.enabled ? L"Activo" : L"Pausado";
+    if (id == kEnabled) label = g_config.endpointId.empty() ? L"Sin salida"
+                                  : g_config.enabled ? L"Activo" : L"Pausado";
     if (id == kStartup) label = g_uiStartup ? L"Sí" : L"No";
     RECT area = item->rcItem;
     PaintText(item->hDC, label.c_str(), area, g_fontBody, foreground,
@@ -613,6 +614,40 @@ void PaintCombo(const DRAWITEMSTRUCT* item) {
     PaintText(item->hDC, label.c_str(), area, g_fontBody,
               item->itemID == static_cast<UINT>(-1) ? RGB(145, 151, 153)
                                                         : RGB(245, 245, 242));
+}
+
+LRESULT CALLBACK ComboSubclass(HWND combo, UINT message, WPARAM wparam,
+                              LPARAM lparam, UINT_PTR id, DWORD_PTR) {
+    const LRESULT result = DefSubclassProc(combo, message, wparam, lparam);
+    if (message == WM_PAINT || message == WM_NCPAINT) {
+        RECT bounds;
+        GetWindowRect(combo, &bounds);
+        const int width = bounds.right - bounds.left;
+        const int height = bounds.bottom - bounds.top;
+        HDC dc = GetWindowDC(combo);
+        if (dc && width > 28 && height > 12) {
+            HBRUSH background = CreateSolidBrush(RGB(19, 22, 23));
+            RECT arrow = {width - 28, 2, width - 2, height - 2};
+            FillRect(dc, &arrow, background);
+            DeleteObject(background);
+            HPEN pen = CreatePen(PS_SOLID, 2, RGB(221, 225, 221));
+            const HGDIOBJ oldPen = SelectObject(dc, pen);
+            const int centerX = width - 15;
+            const int centerY = height / 2;
+            MoveToEx(dc, centerX - 5, centerY - 2, nullptr);
+            LineTo(dc, centerX, centerY + 3);
+            LineTo(dc, centerX + 5, centerY - 2);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+            HBRUSH border = CreateSolidBrush(RGB(45, 51, 53));
+            RECT frame = {0, 0, width, height};
+            FrameRect(dc, &frame, border);
+            DeleteObject(border);
+            ReleaseDC(combo, dc);
+        }
+    }
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(combo, ComboSubclass, id);
+    return result;
 }
 
 void SetExpanded(bool expanded) {
@@ -647,6 +682,7 @@ void BuildWindow() {
     AddControl(L"COMBOBOX", L"", CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED |
                CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
                18, 178, 344, 210, kDevice);
+    SetWindowSubclass(GetDlgItem(g_window, kDevice), ComboSubclass, 1, 0);
     AddControl(L"BUTTON", L"↻", BS_OWNERDRAW | WS_TABSTOP,
                370, 178, 32, 32, kRefresh);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
