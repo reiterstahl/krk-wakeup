@@ -3,3 +3,11 @@
 /.vs/
 *.user
 *.suo
+
+# Local settings and credentials
+settings.ini
+.env
+.env.*
+*.pem
+*.pfx
+*.key

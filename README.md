@@ -69,4 +69,4 @@ El archivo estará en `build\Release\krk-wakeup.exe`. Cada cambio en `main` ejec
 
 ## Proyecto
 
-La idea es publicar el proyecto como código abierto tras validar el comportamiento y elegir una licencia. Por ahora el repositorio es privado. KRK Wakeup es un proyecto independiente y no está afiliado a KRK, Gibson ni SMSL.
+El repositorio es público para compartir el prototipo y sus pruebas. Aún no se ha elegido una licencia de código abierto; hasta entonces, la publicación del código no concede permisos adicionales de uso o redistribución. KRK Wakeup es un proyecto independiente y no está afiliado a KRK, Gibson ni SMSL.

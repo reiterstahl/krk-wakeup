@@ -78,14 +78,14 @@ Componentes previstos:
 - Planificador: temporizador, pausa y recuperación tras suspensión.
 - Preferencias y diagnóstico: configuración por usuario y registro local acotado de envíos/errores.
 
-La primera distribución es un ejecutable portable para Windows 11 x64, que es el sistema del usuario. El alcance acordado se limita a 64 bits; x64 se propone como arquitectura inicial, sin asumir cobertura ARM64. Windows 10 se validará después, definiendo las versiones concretas que se soportarán. La compilación usa CMake y GitHub Actions en Windows.
+La primera distribución es un ejecutable portable para Windows 11 x64. El alcance acordado se limita a 64 bits; x64 se propone como arquitectura inicial, sin asumir cobertura ARM64. Windows 10 se validará después, definiendo las versiones concretas que se soportarán. La compilación usa CMake y GitHub Actions en Windows.
 
 ## Entregas propuestas
 
 1. **Implementado:** selección de salida, pulso de prueba, icono, configuración, activar/pausar, temporizador y persistencia del dispositivo.
 2. **Implementado:** espera y reintento cuando la salida no está disponible, sin usar otra salida; compilación automatizada y ejecutable portable.
 3. **Pendiente de prueba física:** calibrar la señal y demostrar que evita el reposo, que permanece en el SU-1 al cambiar la salida predeterminada y que se recupera después de desconexión o suspensión.
-4. **Antes de publicar:** verificar Windows 10, elegir licencia y documentar las combinaciones de modelo/conexión realmente probadas.
+4. **Antes de anunciar soporte adicional o publicar una versión con licencia abierta:** verificar Windows 10, elegir licencia y documentar las combinaciones de modelo/conexión realmente probadas.
 
 ## Criterios de aceptación
 
@@ -103,4 +103,4 @@ La primera distribución es un ejecutable portable para Windows 11 x64, que es e
 2. Medir el tiempo real de reposo tomando 15 minutos como referencia inicial y validar la señal con un intervalo inicial propuesto de 5 minutos. Ajustar ambos campos durante las pruebas.
 3. Confirmar en los parlantes el nivel, frecuencia y duración mínimos eficaces; aún no hay un perfil de señal validado.
 
-Las decisiones de licencia, idiomas e instalador pueden cerrarse después de verificar la viabilidad del audio. El repositorio permanecerá privado hasta que el usuario solicite cambiar su visibilidad.
+Las decisiones de licencia, idiomas e instalador pueden cerrarse después de verificar la viabilidad del audio. El repositorio es público como prototipo, todavía sin licencia de código abierto.
