@@ -80,15 +80,15 @@ public:
     PulseWorker(const PulseWorker&) = delete;
     PulseWorker& operator=(const PulseWorker&) = delete;
 
-    void Configure(const Config& config) {
+    void Configure(const Config& config, bool manualTestFollows = false) {
         std::lock_guard<std::mutex> lock(mutex_);
         const bool activate = (!config_.enabled || config_.endpointId.empty() ||
                                config_.endpointId != config.endpointId) &&
                               config.enabled && !config.endpointId.empty();
         config_ = config;
         ++generation_;
-        next_ = Clock::now() + (activate ? std::chrono::seconds(0)
-                                         : std::chrono::seconds(config.intervalSeconds));
+        next_ = Clock::now() + (activate && !manualTestFollows ? std::chrono::seconds(0)
+                                                               : std::chrono::seconds(config.intervalSeconds));
         status_ = config.endpointId.empty() ? L"Selecciona una salida de audio."
                   : config.enabled ? L"Activo." : L"Pausado.";
         condition_.notify_one();
@@ -120,7 +120,7 @@ private:
                 continue;
             }
             if (!config_.enabled && !testPending_) {
-                status_ = L"Pausado.";
+                if (status_ == L"Iniciando…") status_ = L"Pausado.";
                 condition_.wait(lock, [this] { return stopping_ || testPending_ || config_.enabled; });
                 continue;
             }
@@ -353,7 +353,7 @@ void ShowInputError(const wchar_t* message) {
     MessageBoxW(g_window, message, L"KRK Wakeup", MB_OK | MB_ICONWARNING);
 }
 
-bool SaveFromWindow() {
+bool SaveFromWindow(bool manualTestFollows = false) {
     const LRESULT selected = SendMessageW(GetDlgItem(g_window, kDevice), CB_GETCURSEL, 0, 0);
     if (selected == CB_ERR || static_cast<size_t>(selected) >= g_endpoints.size()) {
         ShowInputError(L"Selecciona la salida USB del SMSL SU-1.");
@@ -400,7 +400,7 @@ bool SaveFromWindow() {
         ShowInputError(L"No se pudo guardar la configuración.");
         return false;
     }
-    g_worker->Configure(g_config);
+    g_worker->Configure(g_config, manualTestFollows);
     if (candidate.intervalSeconds >= candidate.idleSeconds)
         MessageBoxW(g_window, L"El intervalo iguala o supera el reposo estimado. Los parlantes podrían apagarse antes del siguiente pulso.",
                     L"KRK Wakeup", MB_OK | MB_ICONWARNING);
@@ -539,7 +539,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         switch (LOWORD(wparam)) {
         case kRefresh: RefreshEndpoints(); return 0;
         case kSave: SaveFromWindow(); UpdateStatus(); return 0;
-        case kTest: if (SaveFromWindow()) g_worker->Test(); return 0;
+        case kTest: if (SaveFromWindow(true)) g_worker->Test(); return 0;
         case kMenuOpen: ShowSettings(); return 0;
         case kMenuToggle: ToggleEnabled(); return 0;
         case kMenuTest:
