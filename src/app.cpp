@@ -1,11 +1,9 @@
-#define NOMINMAX
-#define UNICODE
-#define _UNICODE
 #include "audio.hpp"
 
 #include <windows.h>
 #include <audioclient.h>
 #include <commctrl.h>
+#include <propkeydef.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <mmdeviceapi.h>
 #include <propsys.h>
@@ -19,6 +17,7 @@
 #include <cwchar>
 #include <cwctype>
 #include <memory>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <thread>

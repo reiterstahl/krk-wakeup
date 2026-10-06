@@ -1,4 +1,3 @@
-#define NOMINMAX
 #include "audio.hpp"
 
 #include <audioclient.h>
