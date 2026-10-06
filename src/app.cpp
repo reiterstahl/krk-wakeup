@@ -327,6 +327,11 @@ void RefreshEndpoints() {
         if (index != CB_ERR && g_endpoints[i].id == g_config.endpointId)
             selected = static_cast<int>(index);
     }
+    if (selected < 0 && !g_config.endpointId.empty()) {
+        g_endpoints.push_back({g_config.endpointId, L"Salida guardada (no disponible)"});
+        selected = static_cast<int>(SendMessageW(combo, CB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(g_endpoints.back().name.c_str())));
+    }
     if (selected >= 0) SendMessageW(combo, CB_SETCURSEL, selected, 0);
 }
 
