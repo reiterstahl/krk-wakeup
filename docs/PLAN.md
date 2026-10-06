@@ -6,7 +6,7 @@ Fecha de investigación: 2026-10-06. Estado: propuesta para conversar antes de i
 
 Crear una utilidad nativa de Windows 10 y posteriores que envíe periódicamente una señal breve a la salida elegida para los parlantes KRK. Debe seguir utilizando esa salida aunque Windows cambie su salida predeterminada a unos auriculares Bluetooth.
 
-El primer alcance confirmado es un par de GoAux 3 conectado por RCA y Windows 11 de 64 bits. Queda por identificar la salida del PC o interfaz que alimenta el cable RCA. Windows 10 permanece como objetivo posterior de compatibilidad.
+El primer alcance confirmado es Windows 11 de 64 bits con esta conexión permanente: PC → USB → SMSL SU-1 → RCA → KRK GoAux 3. El destino de la aplicación será la salida de reproducción de Windows correspondiente al SMSL SU-1, seleccionada por el usuario y guardada por identificador. El nombre exacto mostrado por el controlador se comprobará durante la primera configuración. Windows 10 permanece como objetivo posterior de compatibilidad.
 
 Preferencias confirmadas: icono junto al reloj con menú, inicio con Windows opcional, funcionamiento continuo mientras la utilidad esté activa y aceptación de una señal apenas perceptible si es necesaria.
 
@@ -19,7 +19,7 @@ Preferencias confirmadas: icono junto al reloj con menú, inicio con Windows opc
 - Microsoft documenta que se puede abrir una salida concreta mediante su identificador con [IMMDeviceEnumerator::GetDevice](https://learn.microsoft.com/en-us/windows/win32/coreaudio/getting-the-default-device-endpoint-for-stream-routing). Esa será la base del direccionamiento de audio.
 - [IMMDevice::GetId](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdevice-getid) permite guardar el identificador y recuperar la salida después. Se trata como un valor opaco; no se analiza su contenido ni se asume que nunca cambie tras reinstalaciones o cambios de hardware.
 
-El repositorio contiene documentación; aún no hay mediciones ni pruebas en Windows o GoAux.
+El usuario estima un tiempo de reposo de aproximadamente 15 minutos en su configuración. Es una referencia inicial aportada por el usuario, pendiente de medición controlada; no una especificación del fabricante. El repositorio contiene documentación; aún no se han ejecutado pruebas de la aplicación en Windows o GoAux.
 
 ## Comportamiento propuesto
 
@@ -28,16 +28,28 @@ El repositorio contiene documentación; aún no hay mediciones ni pruebas en Win
 3. Mostrar estados precisos: activo, pausado, dispositivo desconectado o error. Un envío correcto no demuestra que el amplificador permanezca despierto.
 4. Recordar la salida seleccionada por identificador. Cambiar el dispositivo predeterminado no debe cambiar el destino de los pulsos.
 5. Si desaparece esa salida, detener los envíos y esperar su regreso. Nunca elegir automáticamente auriculares u otra salida. Si cambia el identificador y no puede reconocerse con certeza, solicitar una nueva selección.
-6. Ofrecer ajustes de intervalo, duración y nivel; los valores iniciales dependerán de la validación física. Incluir inicio con Windows opcional y funcionamiento continuo mientras esté activa.
+6. Ofrecer ajustes de intervalo, duración y nivel. Para las primeras pruebas se propone un pulso cada 5 minutos, con una referencia editable de reposo estimado de 15 minutos. Los parámetros de señal se validarán físicamente. Incluir inicio con Windows opcional y funcionamiento continuo mientras esté activa.
 7. Respetar el volumen y mute existentes. Informar cuando el mute o volumen impida una prueba; no subir automáticamente el volumen del sistema.
 8. Permitir la suspensión normal del equipo. Mientras el equipo duerma o esté apagado no habrá pulsos. Al reanudar, recuperar la salida y el temporizador sin acumular envíos atrasados.
 9. Trabajar en modo de audio compartido para convivir con otras aplicaciones. Si una aplicación ocupa la salida de forma exclusiva, informar y reintentar sin interrumpirla.
 
 ## Qué significa «solo a estos parlantes»
 
-Con USB o Bluetooth, el usuario puede seleccionar la salida correspondiente a los KRK si está disponible en Windows. La disponibilidad simultánea de varios dispositivos Bluetooth debe comprobarse en el equipo real.
+En la configuración confirmada, la aplicación enviará los pulsos a la salida USB del SMSL SU-1. Los auriculares Bluetooth pueden ser la salida predeterminada de Windows sin cambiar ese destino. El usuario seleccionará el DAC una vez; no se dependerá de que la salida contenga «KRK» en su nombre.
 
-Con una conexión analógica, el destino seleccionable es la salida de la tarjeta o interfaz. Windows no puede garantizar qué parlantes físicos están conectados al extremo del cable. Una salida compartida, duplicada o redirigida por el controlador necesita comprobarse antes de prometer exclusividad.
+Windows identifica el DAC, no los parlantes conectados por RCA. La aplicación podrá detectar la desaparición de la salida USB, pero no debe dar por detectable que se retire el cable RCA o se apaguen los GoAux mientras el DAC sigue conectado. Una salida compartida, duplicada o redirigida por el controlador necesita comprobarse antes de prometer exclusividad.
+
+## Campos de tiempo para las pruebas
+
+| Campo | Valor inicial | Función |
+| --- | --- | --- |
+| Reposo estimado de los parlantes | 15 minutos, editable | Referencia para comparar con el intervalo de envío; no modifica el temporizador interno de los GoAux. |
+| Intervalo entre pulsos | 5 minutos, editable | Tiempo entre inicios de pulsos mientras la utilidad está activa. |
+| Duración de la señal | Ajustable, pendiente de calibración | Tiempo durante el cual se reproduce cada pulso. |
+
+Permitir introducir minutos y segundos. Guardar los valores por usuario y mostrar el tiempo hasta el siguiente pulso. Los cambios de intervalo reinician la cuenta desde su aplicación, sin generar una ráfaga de pulsos pendientes. El botón «Probar señal» envía un único pulso y, si el envío termina correctamente mientras la utilidad está activa, reinicia la cuenta del siguiente pulso.
+
+Validar valores positivos, límites explícitos y que la duración sea menor que el intervalo. Si el intervalo iguala o supera el reposo estimado, mostrar un aviso de que puede no evitarlo; mantener la posibilidad de experimentar. Editar la referencia de reposo no cambiará silenciosamente el intervalo elegido. Los 5 minutos son una propuesta de partida con margen respecto a los 15 estimados, pendiente de verificación física.
 
 ## Señal: validar antes de fijar valores
 
@@ -79,15 +91,16 @@ La primera distribución propuesta es un ejecutable portable para Windows 11 x64
 
 - Mantener los GoAux despiertos durante varias ventanas de reposo, con el perfil de señal documentado y aceptado por el usuario.
 - Cambiar a auriculares Bluetooth como salida predeterminada sin enviarles la señal de esta aplicación.
-- Desconectar los KRK sin que el pulso se redirija a otra salida.
+- Desconectar el USB del SMSL SU-1 sin que el pulso se redirija a otra salida. Retirar solo los RCA o apagar los parlantes no debe presentarse como un evento que la aplicación necesariamente pueda detectar.
 - Recuperar la misma salida al reconectar y al reanudar Windows, o mostrar claramente que se requiere intervención.
 - Convivir con reproducción normal y manejar de forma visible una salida ocupada en modo exclusivo.
 - Pausar y salir deben detener los envíos. Verificar volumen bajo, mute e inicio opcional con Windows.
 - Probar primero en Windows 11 x64; verificar Windows 10 en una fase posterior antes de anunciar soporte probado. La compilación o los tests automáticos no sustituyen las pruebas físicas de reposo.
 
-## Preguntas pendientes
+## Validaciones pendientes
 
-1. ¿El cable RCA viene de un conector de 3,5 mm del PC, de un monitor o de una interfaz/DAC USB? ¿Cómo aparece esa salida en Windows?
-2. Medir con el usuario el tiempo real de reposo y validar la señal en los GoAux 3; la evidencia actual no permite fijar esos valores.
+1. Seleccionar en Windows la salida correspondiente al SMSL SU-1 y comprobar manualmente que alimenta los GoAux 3.
+2. Medir el tiempo real de reposo tomando 15 minutos como referencia inicial y validar la señal con un intervalo inicial propuesto de 5 minutos. Ajustar ambos campos durante las pruebas.
+3. Confirmar en los parlantes el nivel, frecuencia y duración mínimos eficaces; aún no hay un perfil de señal validado.
 
 Las decisiones de licencia, idiomas e instalador pueden cerrarse después de verificar la viabilidad del audio. El repositorio permanecerá privado hasta que el usuario solicite cambiar su visibilidad.
