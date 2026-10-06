@@ -7,6 +7,7 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square"></a>
   <img alt="Windows 11 x64" src="https://img.shields.io/badge/Windows_11-x64-0078D4?style=flat-square&logo=windows11&logoColor=white">
   <img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus&logoColor=white">
   <img alt="Win32" src="https://img.shields.io/badge/UI-Win32-202526?style=flat-square&logo=windows11&logoColor=white">
@@ -46,7 +47,7 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 
 ## Descargar y probar
 
-1. En [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml), abre la última ejecución exitosa y descarga el artefacto **`krk-wakeup-windows-x64`**. Extrae `krk-wakeup.exe` en una carpeta estable.
+1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.1.0-windows-x64.zip`** de la versión preliminar **v0.1.0** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
 2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva.
 3. Abre la aplicación y selecciona la salida de reproducción que corresponde al **SMSL SU-1**. Puedes comparar su nombre con **Configuración → Sistema → Sonido** de Windows.
 4. Con un volumen cómodo en los GoAux, pulsa **Probar tono**. Reproduce 3 segundos a 440 Hz y 5 % de nivel digital solo por la salida seleccionada, incluso si la aplicación está pausada. Confirma que se oye en los GoAux y no en otro dispositivo. Después, pulsa **Probar pulso**: usa la señal automática configurada, cuyo perfil inicial es **440 Hz**, **1000 ms** y **1 %** de nivel digital. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
@@ -81,4 +82,6 @@ El archivo estará en `build\Release\krk-wakeup.exe`. Cada cambio en `main` ejec
 
 ## Proyecto
 
-El repositorio es público para compartir el prototipo y sus pruebas. Aún no se ha elegido una licencia de código abierto; hasta entonces, la publicación del código no concede permisos adicionales de uso o redistribución. KRK Wakeup es un proyecto independiente y no está afiliado a KRK, Gibson ni SMSL.
+KRK Wakeup es software libre bajo la [licencia MIT](LICENSE), con copyright de **reiterstahl**. Permite usar, modificar y redistribuir el software, incluso comercialmente, conservando el aviso de copyright y la licencia. El software se proporciona sin garantías.
+
+KRK Wakeup es un proyecto independiente y no está afiliado a KRK, Gibson ni SMSL.

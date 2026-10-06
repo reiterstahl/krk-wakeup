@@ -85,7 +85,7 @@ La primera distribución es un ejecutable portable para Windows 11 x64. El alcan
 1. **Implementado:** selección de salida, pulso de prueba, icono, configuración, activar/pausar, temporizador y persistencia del dispositivo.
 2. **Implementado:** espera y reintento cuando la salida no está disponible, sin usar otra salida; compilación automatizada y ejecutable portable.
 3. **Pendiente de prueba física:** calibrar la señal y demostrar que evita el reposo, que permanece en el SU-1 al cambiar la salida predeterminada y que se recupera después de desconexión o suspensión.
-4. **Antes de anunciar soporte adicional o publicar una versión con licencia abierta:** verificar Windows 10, elegir licencia y documentar las combinaciones de modelo/conexión realmente probadas.
+4. **Publicación inicial:** versión preliminar v0.1.0 para Windows 11 x64 bajo [licencia MIT](../LICENSE). Verificar Windows 10 y documentar las combinaciones de modelo/conexión realmente probadas antes de anunciar soporte adicional.
 
 ## Criterios de aceptación
 
@@ -103,4 +103,4 @@ La primera distribución es un ejecutable portable para Windows 11 x64. El alcan
 2. Medir el tiempo real de reposo tomando 15 minutos como referencia inicial y validar la señal con un intervalo inicial propuesto de 5 minutos. Ajustar ambos campos durante las pruebas.
 3. Confirmar en los parlantes el nivel, frecuencia y duración mínimos eficaces; aún no hay un perfil de señal validado.
 
-Las decisiones de licencia, idiomas e instalador pueden cerrarse después de verificar la viabilidad del audio. El repositorio es público como prototipo, todavía sin licencia de código abierto.
+El repositorio es público y utiliza la [licencia MIT](../LICENSE). La documentación principal está disponible en español e inglés. La traducción de la interfaz y un instalador quedan para después de verificar la viabilidad del audio.

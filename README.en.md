@@ -7,6 +7,7 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square"></a>
   <img alt="Windows 11 x64" src="https://img.shields.io/badge/Windows_11-x64-0078D4?style=flat-square&logo=windows11&logoColor=white">
   <img alt="C++17" src="https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus&logoColor=white">
   <img alt="Win32" src="https://img.shields.io/badge/UI-Win32-202526?style=flat-square&logo=windows11&logoColor=white">
@@ -46,7 +47,7 @@ The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → K
 
 ## Download and test
 
-1. Open the latest successful [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml) and download the **`krk-wakeup-windows-x64`** artifact. Extract `krk-wakeup.exe` to a stable folder.
+1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.1.0-windows-x64.zip`** from the **v0.1.0** prerelease, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
 2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place.
 3. Open the app and select the playback output corresponding to the **SMSL SU-1**. You can compare its name with **Settings → System → Sound** in Windows.
 4. Set the GoAux speakers to a comfortable volume, then click **Probar tono** (Test tone). It plays for three seconds at 440 Hz and 5% digital level only through the selected output, even if the app is paused. Confirm that you hear it on the GoAux and nowhere else. Next, click **Probar pulso** (Test pulse): it uses the configured automatic signal, initially **440 Hz**, **1000 ms**, and **1%** digital level. Change these values under **Más ajustes** (More settings) if the signal is annoying or fails to prevent standby.
@@ -81,4 +82,6 @@ The executable will be at `build\Release\krk-wakeup.exe`. Every change to `main`
 
 ## Project
 
-This repository is public so the prototype and its tests can be shared. An open-source license has not yet been chosen; until then, publishing the code grants no additional rights to use or redistribute it. KRK Wakeup is an independent project and is not affiliated with KRK, Gibson, or SMSL.
+KRK Wakeup is free and open-source software under the [MIT license](LICENSE), with copyright held by **reiterstahl**. You may use, modify, and redistribute the software, including commercially, provided you retain the copyright notice and license. The software is provided without warranty.
+
+KRK Wakeup is an independent project and is not affiliated with KRK, Gibson, or SMSL.
