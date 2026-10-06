@@ -85,7 +85,7 @@ La primera distribución es un ejecutable portable para Windows 11 x64. El alcan
 1. **Implementado:** selección de salida, pulso de prueba, icono, configuración, activar/pausar, temporizador y persistencia del dispositivo.
 2. **Implementado:** espera y reintento cuando la salida no está disponible, sin usar otra salida; compilación automatizada y ejecutable portable.
 3. **Pendiente de prueba física:** calibrar la señal y demostrar que evita el reposo, que permanece en el SU-1 al cambiar la salida predeterminada y que se recupera después de desconexión o suspensión.
-4. **Publicación inicial:** versión preliminar v0.1.0 para Windows 11 x64 bajo [licencia MIT](../LICENSE). Verificar Windows 10 y documentar las combinaciones de modelo/conexión realmente probadas antes de anunciar soporte adicional.
+4. **Publicación inicial:** release v0.1.0 para Windows 11 x64 bajo [licencia MIT](../LICENSE). Verificar Windows 10 y documentar las combinaciones de modelo/conexión realmente probadas antes de anunciar soporte adicional.
 
 ## Criterios de aceptación
 

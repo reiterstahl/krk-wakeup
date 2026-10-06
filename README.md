@@ -18,7 +18,7 @@
 
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
-> **Estado:** prototipo funcional. La compilación y el arranque están comprobados en el flujo de Windows; la eficacia del pulso y su audibilidad se están probando con los parlantes reales.
+> **Estado:** prototipo funcional. La compilación y el arranque están comprobados en el flujo de Windows; la eficacia del pulso y su audibilidad se están probando con los parlantes reales. Una primera prueba del usuario mantuvo los GoAux encendidos unos 45 minutos; faltan pruebas más largas con el perfil exacto documentado.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
@@ -47,7 +47,7 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 
 ## Descargar y probar
 
-1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.1.0-windows-x64.zip`** de la versión preliminar **v0.1.0** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.1.0-windows-x64.zip`** de la versión **v0.1.0** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
 2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva.
 3. Abre la aplicación y selecciona la salida de reproducción que corresponde al **SMSL SU-1**. Puedes comparar su nombre con **Configuración → Sistema → Sonido** de Windows.
 4. Con un volumen cómodo en los GoAux, pulsa **Probar tono**. Reproduce 3 segundos a 440 Hz y 5 % de nivel digital solo por la salida seleccionada, incluso si la aplicación está pausada. Confirma que se oye en los GoAux y no en otro dispositivo. Después, pulsa **Probar pulso**: usa la señal automática configurada, cuyo perfil inicial es **440 Hz**, **1000 ms** y **1 %** de nivel digital. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
