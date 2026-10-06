@@ -486,12 +486,11 @@ void ToggleEnabled() {
 void ShowTrayMenu() {
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
-    AppendMenuW(menu, MF_STRING, kMenuOpen, L"Configuración…");
-    AppendMenuW(menu, MF_STRING, kMenuToggle,
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuOpen, L"Configuración…");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuToggle,
                 g_config.enabled ? L"Pausar" : L"Activar");
-    AppendMenuW(menu, MF_STRING, kMenuTest, L"Probar señal");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuExit, L"Salir");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuTest, L"Probar señal");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuExit, L"Salir");
     POINT point;
     GetCursorPos(&point);
     SetForegroundWindow(g_window);
@@ -598,6 +597,20 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
         InflateRect(&focus, -3, -3);
         DrawFocusRect(item->hDC, &focus);
     }
+}
+
+void PaintMenuItem(const DRAWITEMSTRUCT* item) {
+    const bool selected = (item->itemState & ODS_SELECTED) != 0;
+    HBRUSH background = CreateSolidBrush(selected ? RGB(37, 43, 44)
+                                                : RGB(12, 14, 15));
+    FillRect(item->hDC, &item->rcItem, background);
+    DeleteObject(background);
+    const auto* label = reinterpret_cast<const wchar_t*>(item->itemData);
+    RECT textArea = item->rcItem;
+    textArea.left += 17;
+    textArea.right -= 12;
+    PaintText(item->hDC, label ? label : L"", textArea, g_fontBody,
+              selected ? RGB(241, 204, 73) : RGB(239, 241, 239));
 }
 
 void PaintCombo(const DRAWITEMSTRUCT* item) {
@@ -733,6 +746,11 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     }
     case WM_MEASUREITEM: {
         auto* item = reinterpret_cast<MEASUREITEMSTRUCT*>(lparam);
+        if (item && item->CtlType == ODT_MENU) {
+            item->itemWidth = 180;
+            item->itemHeight = 34;
+            return TRUE;
+        }
         if (item && item->CtlID == kDevice) {
             item->itemHeight = 30;
             return TRUE;
@@ -742,7 +760,8 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     case WM_DRAWITEM: {
         auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lparam);
         if (!item) break;
-        if (item->CtlID == kDevice) PaintCombo(item);
+        if (item->CtlType == ODT_MENU) PaintMenuItem(item);
+        else if (item->CtlID == kDevice) PaintCombo(item);
         else PaintButton(item);
         return TRUE;
     }
