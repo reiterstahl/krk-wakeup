@@ -29,7 +29,7 @@ La idea es sencilla: mientras la utilidad esté activa, genera un pulso discreto
 
 - Icono junto al reloj de Windows y una ventana compacta con tema negro OLED.
 - Salida de audio fija: cambiar la salida predeterminada a auriculares Bluetooth no cambia el destino del pulso.
-- Prueba manual, pausa, intervalo configurable y cuenta regresiva del siguiente envío.
+- Prueba de tono audible de 3 segundos (440 Hz, 5 % de nivel digital), prueba del pulso configurado, pausa, intervalo configurable y cuenta regresiva del siguiente envío.
 - Ajustes ampliables de reposo estimado, duración, frecuencia y nivel digital de la señal.
 - Inicio opcional con Windows para la cuenta de usuario actual.
 - Espera y reintento cuando desaparece la salida seleccionada; nunca redirige los pulsos automáticamente a otra salida.
@@ -41,10 +41,12 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 1. En [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml), abre la última ejecución exitosa y descarga el artefacto **`krk-wakeup-windows-x64`**. Extrae `krk-wakeup.exe` en una carpeta estable.
 2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva.
 3. Abre la aplicación y selecciona la salida de reproducción que corresponde al **SMSL SU-1**. Puedes comparar su nombre con **Configuración → Sistema → Sonido** de Windows.
-4. Con un volumen cómodo en los GoAux, pulsa **Probar pulso**. El perfil inicial es **440 Hz**, **1000 ms** y **1 %** de nivel digital. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
+4. Con un volumen cómodo en los GoAux, pulsa **Probar tono**. Reproduce 3 segundos a 440 Hz y 5 % de nivel digital solo por la salida seleccionada, incluso si la aplicación está pausada. Confirma que se oye en los GoAux y no en otro dispositivo. Después, pulsa **Probar pulso**: usa la señal automática configurada, cuyo perfil inicial es **440 Hz**, **1000 ms** y **1 %** de nivel digital. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
 5. Guarda la configuración. Cambia la salida predeterminada de Windows a tus auriculares BT y comprueba que la prueba sigue saliendo solo por el DAC. Después, deja los GoAux sin otro audio durante más de su tiempo habitual de reposo y observa si permanecen activos.
 
 Los campos de tiempo usan `mm:ss`. **Reposo estimado** sirve de referencia para calibrar; no modifica el temporizador interno de los KRK. **Intervalo entre pulsos** controla el envío real. Si el intervalo iguala o supera el reposo estimado, la app muestra un aviso.
+
+Si los GoAux siguen entrando en reposo pese a los pulsos de 5 minutos, comprueba primero con **Probar tono** que la ruta hasta los parlantes funciona. Después prueba el pulso con un nivel digital de **3 %** y una duración de **2000 ms**, manteniendo los 5 minutos entre pulsos. Si sigue sin funcionar, prueba **5 %** y observa al menos dos periodos completos de reposo. Reduce el nivel si se vuelve molesto. El umbral interno de detección de los GoAux no está publicado en su manual, así que estos valores son una propuesta de prueba, no una garantía. También revisa que Windows y el SMSL SU-1 no estén silenciados.
 
 **Al bloquear Windows con Win + L**, la utilidad sigue ejecutándose mientras el equipo permanezca encendido. Si Windows entra en suspensión o hibernación, los procesos de escritorio se pausan y los pulsos se reanudan al volver. [Documentación de Microsoft sobre suspensión](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
 

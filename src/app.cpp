@@ -46,10 +46,12 @@ constexpr int kSave = 109;
 constexpr int kTest = 110;
 constexpr int kStatus = 111;
 constexpr int kAdvanced = 112;
+constexpr int kTone = 113;
 constexpr int kMenuOpen = 201;
 constexpr int kMenuToggle = 202;
 constexpr int kMenuTest = 203;
 constexpr int kMenuExit = 204;
+constexpr int kMenuTone = 205;
 
 struct Config {
     std::wstring endpointId;
@@ -75,6 +77,7 @@ struct Status {
 
 class PulseWorker {
 public:
+    enum class TestKind { None, Pulse, Tone };
     explicit PulseWorker(Config config) : config_(std::move(config)), next_(Clock::now()) {
         thread_ = std::thread([this] { Loop(); });
     }
@@ -95,9 +98,9 @@ public:
                   : config.enabled ? L"Activo." : L"Pausado.";
         condition_.notify_one();
     }
-    void Test() {
+    void Test(TestKind kind) {
         std::lock_guard<std::mutex> lock(mutex_);
-        testPending_ = true;
+        testPending_ = kind;
         condition_.notify_one();
     }
     Status Snapshot() {
@@ -121,32 +124,38 @@ private:
                 condition_.wait(lock, [this] { return stopping_ || !config_.endpointId.empty(); });
                 continue;
             }
-            if (!config_.enabled && !testPending_) {
+            if (!config_.enabled && testPending_ == TestKind::None) {
                 if (status_ == L"Iniciando…") status_ = L"Pausado.";
-                condition_.wait(lock, [this] { return stopping_ || testPending_ || config_.enabled; });
+                condition_.wait(lock, [this] { return stopping_ || testPending_ != TestKind::None || config_.enabled; });
                 continue;
             }
-            if (!testPending_ && Clock::now() < next_) {
+            if (testPending_ == TestKind::None && Clock::now() < next_) {
                 const auto generation = generation_;
                 condition_.wait_until(lock, next_, [this, generation] {
-                    return stopping_ || testPending_ || generation_ != generation;
+                    return stopping_ || testPending_ != TestKind::None || generation_ != generation;
                 });
                 continue;
             }
             if (stopping_) break;
-            const bool manual = testPending_;
-            testPending_ = false;
+            const TestKind test = testPending_;
+            testPending_ = TestKind::None;
             const Config current = config_;
             const auto generation = generation_;
-            status_ = manual ? L"Enviando pulso de prueba…" : L"Enviando pulso…";
+            status_ = test == TestKind::Tone ? L"Reproduciendo tono de prueba…"
+                    : test == TestKind::Pulse ? L"Enviando pulso de prueba…"
+                    : L"Enviando pulso…";
             lock.unlock();
-            const PulseResult result = RenderPulse(current.endpointId, current.durationMs,
-                                                    current.frequencyHz, current.levelPercent);
+            const PulseResult result = test == TestKind::Tone
+                ? RenderPulse(current.endpointId, 3000, 440, 5)
+                : RenderPulse(current.endpointId, current.durationMs,
+                              current.frequencyHz, current.levelPercent);
             lock.lock();
             if (stopping_) break;
             if (generation != generation_) continue;
             if (result.success) {
-                status_ = manual ? L"Pulso de prueba enviado." : L"Pulso enviado.";
+                status_ = test == TestKind::Tone ? L"Tono de prueba enviado."
+                        : test == TestKind::Pulse ? L"Pulso de prueba enviado."
+                        : L"Pulso enviado.";
                 next_ = Clock::now() + std::chrono::seconds(current.intervalSeconds);
             } else if (result.unavailable) {
                 status_ = L"La salida seleccionada no está disponible. Reintentando…";
@@ -168,7 +177,7 @@ private:
     std::wstring status_ = L"Iniciando…";
     uint64_t generation_ = 0;
     bool stopping_ = false;
-    bool testPending_ = false;
+    TestKind testPending_ = TestKind::None;
 };
 
 HWND g_window = nullptr;
@@ -489,7 +498,8 @@ void ShowTrayMenu() {
     AppendMenuW(menu, MF_OWNERDRAW, kMenuOpen, L"Configuración…");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuToggle,
                 g_config.enabled ? L"Pausar" : L"Activar");
-    AppendMenuW(menu, MF_OWNERDRAW, kMenuTest, L"Probar señal");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuTone, L"Probar tono");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuTest, L"Probar pulso");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuExit, L"Salir");
     POINT point;
     GetCursorPos(&point);
@@ -577,7 +587,7 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
     COLORREF foreground = RGB(238, 240, 237);
     const bool on = id == kEnabled && g_config.enabled && !g_config.endpointId.empty();
     const bool selected = (item->itemState & ODS_SELECTED) != 0;
-    if (id == kTest || on) {
+    if (id == kTone || on) {
         fill = selected ? RGB(207, 172, 48) : RGB(241, 204, 73);
         border = fill;
         foreground = RGB(13, 15, 15);
@@ -700,12 +710,14 @@ void BuildWindow() {
                370, 178, 32, 32, kRefresh);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
                301, 225, 94, 22, kInterval);
+    AddControl(L"BUTTON", L"Probar tono", BS_OWNERDRAW | WS_TABSTOP,
+               18, 266, 92, 36, kTone);
     AddControl(L"BUTTON", L"Probar pulso", BS_OWNERDRAW | WS_TABSTOP,
-               18, 266, 124, 36, kTest);
+               116, 266, 92, 36, kTest);
     AddControl(L"BUTTON", L"Guardar", BS_OWNERDRAW | WS_TABSTOP,
-               150, 266, 122, 36, kSave);
+               214, 266, 92, 36, kSave);
     AddControl(L"BUTTON", L"Más ajustes", BS_OWNERDRAW | WS_TABSTOP,
-               280, 266, 122, 36, kAdvanced);
+               312, 266, 90, 36, kAdvanced);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
                301, 356, 94, 22, kIdle);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
@@ -784,12 +796,17 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             return 0;
         case kAdvanced: SetExpanded(!g_expanded); return 0;
         case kSave: SaveFromWindow(); UpdateStatus(); return 0;
-        case kTest: if (SaveFromWindow(true)) g_worker->Test(); return 0;
+        case kTest: if (SaveFromWindow(true)) g_worker->Test(PulseWorker::TestKind::Pulse); return 0;
+        case kTone: if (SaveFromWindow(true)) g_worker->Test(PulseWorker::TestKind::Tone); return 0;
         case kMenuOpen: ShowSettings(); return 0;
         case kMenuToggle: ToggleEnabled(); return 0;
         case kMenuTest:
             if (g_config.endpointId.empty()) ShowSettings();
-            else g_worker->Test();
+            else g_worker->Test(PulseWorker::TestKind::Pulse);
+            return 0;
+        case kMenuTone:
+            if (g_config.endpointId.empty()) ShowSettings();
+            else g_worker->Test(PulseWorker::TestKind::Tone);
             return 0;
         case kMenuExit: DestroyWindow(window); return 0;
         }
