@@ -15,6 +15,19 @@ jobs:
         run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: Smoke test startup
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath build/Release/krk-wakeup.exe -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            $app.Refresh()
+            if ($app.HasExited) {
+              throw "Application exited during startup with code $($app.ExitCode)"
+            }
+          } finally {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          }
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
