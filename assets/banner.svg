@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title description">
+  <title id="title">KRK Wakeup</title>
+  <desc id="description">A compact Windows utility that sends a quiet pulse to a selected audio output.</desc>
+  <rect width="1200" height="360" rx="28" fill="#050606"/>
+  <rect x="1" y="1" width="1198" height="358" rx="27" fill="none" stroke="#252b2b" stroke-width="2"/>
+  <rect x="55" y="56" width="71" height="71" rx="18" fill="#171b1b"/>
+  <path d="M68 91h13l8-23 10 46 11-45 9 44 9-22h13" fill="none" stroke="#f1cc49" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" transform="translate(-11 0)"/>
+  <text x="55" y="214" font-family="Segoe UI, Arial, sans-serif" font-size="71" font-weight="700" letter-spacing="-2.5" fill="#f6f7f4">KRK Wakeup</text>
+  <text x="58" y="257" font-family="Segoe UI, Arial, sans-serif" font-size="21" fill="#aab0ae">Una señal breve. Tus parlantes listos.</text>
+  <rect x="58" y="294" width="110" height="28" rx="14" fill="#222419"/>
+  <circle cx="74" cy="308" r="5" fill="#f1cc49"/>
+  <text x="88" y="313" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" fill="#f1cc49">ACTIVO</text>
+  <text x="185" y="313" font-family="Segoe UI, Arial, sans-serif" font-size="13" letter-spacing="1.5" fill="#848b89">WINDOWS 11 · AUDIO NATIVO</text>
+  <path d="M630 180h65l24-62 30 135 34-170 34 169 30-76 27 49 28-45h184" fill="none" stroke="#f1cc49" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity=".10"/>
+  <path d="M630 180h65l24-62 30 135 34-170 34 169 30-76 27 49 28-45h184" fill="none" stroke="#f1cc49" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="630" cy="180" r="8" fill="#f1cc49"/>
+  <circle cx="1076" cy="180" r="8" fill="#f1cc49"/>
+  <path d="M631 270h445" stroke="#272e2d" stroke-width="2"/>
+  <text x="632" y="305" font-family="Segoe UI, Arial, sans-serif" font-size="14" letter-spacing="2" fill="#87908b">PC</text>
+  <text x="821" y="305" font-family="Segoe UI, Arial, sans-serif" font-size="14" letter-spacing="2" fill="#87908b">SMSL SU-1</text>
+  <text x="1003" y="305" font-family="Segoe UI, Arial, sans-serif" font-size="14" letter-spacing="2" fill="#87908b">GOAUX 3</text>
+</svg>
