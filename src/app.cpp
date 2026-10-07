@@ -197,8 +197,41 @@ bool g_expanded = false;
 bool g_uiStartup = false;
 void SetExpanded(bool expanded);
 constexpr int kClientWidth = 420;
-constexpr int kClientCompactHeight = 336;
-constexpr int kClientExpandedHeight = 548;
+constexpr int kClientCompactHeight = 390;
+constexpr int kClientExpandedHeight = 632;
+UINT g_dpi = 96;
+struct ControlLayout { int id; RECT rect; };
+std::vector<ControlLayout> g_controlLayouts;
+int Scale(int value) { return MulDiv(value, static_cast<int>(g_dpi), 96); }
+RECT ScaleRect(RECT rect) {
+    return {Scale(rect.left), Scale(rect.top), Scale(rect.right), Scale(rect.bottom)};
+}
+void CreateUiFonts() {
+    if (g_fontBody) DeleteObject(g_fontBody);
+    if (g_fontTitle) DeleteObject(g_fontTitle);
+    if (g_fontSmall) DeleteObject(g_fontSmall);
+    g_fontBody = CreateFontW(-Scale(16), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    g_fontTitle = CreateFontW(-Scale(26), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    g_fontSmall = CreateFontW(-Scale(13), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+}
+void LayoutControls() {
+    for (const auto& layout : g_controlLayouts) {
+        HWND control = GetDlgItem(g_window, layout.id);
+        if (!control) continue;
+        RECT rect = ScaleRect(layout.rect);
+        SetWindowPos(control, nullptr, rect.left, rect.top,
+                     rect.right - rect.left, rect.bottom - rect.top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontBody), TRUE);
+    }
+}
+
 
 std::wstring ReadText(HWND control) {
     const int size = GetWindowTextLengthW(control);
@@ -544,34 +577,40 @@ void PaintWindow(HWND window) {
     constexpr COLORREF text = RGB(245, 245, 242);
     constexpr COLORREF muted = RGB(145, 151, 153);
     constexpr COLORREF hairline = RGB(37, 42, 44);
-    PaintText(dc, L"KRK Wakeup", {18, 16, 300, 48}, g_fontTitle, text);
-    PaintText(dc, L"Mantén despiertos tus parlantes", {19, 49, 400, 70},
-              g_fontSmall, muted);
-    PaintRounded(dc, {18, 82, 402, 143}, RGB(17, 20, 21), hairline, 17);
+    auto label = [&](const wchar_t* value, RECT logical, HFONT font, COLORREF color) {
+        PaintText(dc, value, ScaleRect(logical), font, color);
+    };
+    auto panel = [&](RECT logical, COLORREF fill, int radius) {
+        PaintRounded(dc, ScaleRect(logical), fill, hairline, Scale(radius));
+    };
+    label(L"KRK Wakeup", {18, 16, 300, 48}, g_fontTitle, text);
+    label(L"Mantén despiertos tus parlantes", {19, 49, 400, 70}, g_fontSmall, muted);
+    panel({18, 82, 402, 143}, RGB(17, 20, 21), 17);
     HBRUSH dot = CreateSolidBrush(g_config.enabled && !g_config.endpointId.empty()
                                  ? RGB(241, 204, 73) : RGB(100, 108, 110));
-    RECT dotRect = {32, 105, 41, 114};
+    RECT dotRect = ScaleRect({32, 105, 41, 114});
     FillRect(dc, &dotRect, dot);
     DeleteObject(dot);
-    PaintText(dc, L"SALIDA DE AUDIO", {18, 153, 402, 173}, g_fontSmall, muted);
-    PaintText(dc, L"INTERVALO ENTRE PULSOS", {18, 218, 284, 251}, g_fontSmall, muted);
-    PaintRounded(dc, {293, 218, 402, 252}, RGB(19, 22, 23), hairline, 9);
+    label(L"SALIDA DE AUDIO", {18, 153, 402, 173}, g_fontSmall, muted);
+    label(L"INTERVALO ENTRE PULSOS", {18, 218, 284, 251}, g_fontSmall, muted);
+    panel({293, 218, 402, 252}, RGB(19, 22, 23), 9);
+    label(L"PRUEBAS DE AUDIO", {18, 255, 402, 276}, g_fontSmall, muted);
 
     if (g_expanded) {
-        HPEN line = CreatePen(PS_SOLID, 1, hairline);
+        HPEN line = CreatePen(PS_SOLID, std::max(1, Scale(1)), hairline);
         const HGDIOBJ oldPen = SelectObject(dc, line);
-        MoveToEx(dc, 18, 318, nullptr);
-        LineTo(dc, 402, 318);
+        MoveToEx(dc, Scale(18), Scale(390), nullptr);
+        LineTo(dc, Scale(402), Scale(390));
         SelectObject(dc, oldPen);
         DeleteObject(line);
-        PaintText(dc, L"AJUSTES DE SEÑAL", {18, 325, 402, 345}, g_fontSmall, muted);
-        PaintText(dc, L"Reposo estimado (mm:ss)", {18, 349, 285, 381}, g_fontBody, text);
-        PaintText(dc, L"Duración del pulso (ms)", {18, 387, 285, 419}, g_fontBody, text);
-        PaintText(dc, L"Frecuencia (Hz)", {18, 425, 285, 457}, g_fontBody, text);
-        PaintText(dc, L"Nivel digital (%)", {18, 463, 285, 495}, g_fontBody, text);
-        PaintText(dc, L"Iniciar con Windows", {18, 500, 300, 536}, g_fontBody, text);
-        for (int top : {350, 388, 426, 464})
-            PaintRounded(dc, {293, top, 402, top + 32}, RGB(19, 22, 23), hairline, 9);
+        label(L"AJUSTES DE SEÑAL", {18, 400, 402, 422}, g_fontSmall, muted);
+        label(L"Reposo estimado (mm:ss)", {18, 430, 285, 462}, g_fontBody, text);
+        label(L"Duración del pulso (ms)", {18, 470, 285, 502}, g_fontBody, text);
+        label(L"Frecuencia (Hz)", {18, 510, 285, 542}, g_fontBody, text);
+        label(L"Nivel digital (%)", {18, 550, 285, 582}, g_fontBody, text);
+        label(L"Iniciar con Windows", {18, 590, 300, 622}, g_fontBody, text);
+        for (int top : {430, 470, 510, 550})
+            panel({293, top, 402, top + 32}, RGB(19, 22, 23), 9);
     }
     BitBlt(screen, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
     SelectObject(dc, oldBitmap);
@@ -587,14 +626,14 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
     COLORREF foreground = RGB(238, 240, 237);
     const bool on = id == kEnabled && g_config.enabled && !g_config.endpointId.empty();
     const bool selected = (item->itemState & ODS_SELECTED) != 0;
-    if (id == kTone || on) {
+    if (id == kSave || on) {
         fill = selected ? RGB(207, 172, 48) : RGB(241, 204, 73);
         border = fill;
         foreground = RGB(13, 15, 15);
     } else if (selected) {
         fill = RGB(38, 44, 45);
     }
-    PaintRounded(item->hDC, item->rcItem, fill, border, 10);
+    PaintRounded(item->hDC, item->rcItem, fill, border, Scale(10));
     std::wstring label = ReadText(item->hwndItem);
     if (id == kEnabled) label = g_config.endpointId.empty() ? L"Sin salida"
                                   : g_config.enabled ? L"Activo" : L"Pausado";
@@ -604,7 +643,7 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
               DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
     if (item->itemState & ODS_FOCUS) {
         RECT focus = area;
-        InflateRect(&focus, -3, -3);
+        InflateRect(&focus, -Scale(3), -Scale(3));
         DrawFocusRect(item->hDC, &focus);
     }
 }
@@ -617,8 +656,8 @@ void PaintMenuItem(const DRAWITEMSTRUCT* item) {
     DeleteObject(background);
     const auto* label = reinterpret_cast<const wchar_t*>(item->itemData);
     RECT textArea = item->rcItem;
-    textArea.left += 17;
-    textArea.right -= 12;
+    textArea.left += Scale(17);
+    textArea.right -= Scale(12);
     PaintText(item->hDC, label ? label : L"", textArea, g_fontBody,
               selected ? RGB(241, 204, 73) : RGB(239, 241, 239));
 }
@@ -632,8 +671,8 @@ void PaintCombo(const DRAWITEMSTRUCT* item) {
                                item->itemID >= g_endpoints.size()
         ? L"Seleccionar salida…" : g_endpoints[item->itemID].name;
     RECT area = item->rcItem;
-    area.left += 10;
-    area.right -= 8;
+    area.left += Scale(10);
+    area.right -= Scale(8);
     PaintText(item->hDC, label.c_str(), area, g_fontBody,
               item->itemID == static_cast<UINT>(-1) ? RGB(145, 151, 153)
                                                         : RGB(245, 245, 242));
@@ -648,18 +687,18 @@ LRESULT CALLBACK ComboSubclass(HWND combo, UINT message, WPARAM wparam,
         const int width = bounds.right - bounds.left;
         const int height = bounds.bottom - bounds.top;
         HDC dc = GetWindowDC(combo);
-        if (dc && width > 28 && height > 12) {
+        if (dc && width > Scale(28) && height > Scale(12)) {
             HBRUSH background = CreateSolidBrush(RGB(19, 22, 23));
-            RECT arrow = {width - 28, 2, width - 2, height - 2};
+            RECT arrow = {width - Scale(28), Scale(2), width - Scale(2), height - Scale(2)};
             FillRect(dc, &arrow, background);
             DeleteObject(background);
-            HPEN pen = CreatePen(PS_SOLID, 2, RGB(221, 225, 221));
+            HPEN pen = CreatePen(PS_SOLID, std::max(1, Scale(2)), RGB(221, 225, 221));
             const HGDIOBJ oldPen = SelectObject(dc, pen);
-            const int centerX = width - 15;
+            const int centerX = width - Scale(15);
             const int centerY = height / 2;
-            MoveToEx(dc, centerX - 5, centerY - 2, nullptr);
-            LineTo(dc, centerX, centerY + 3);
-            LineTo(dc, centerX + 5, centerY - 2);
+            MoveToEx(dc, centerX - Scale(5), centerY - Scale(2), nullptr);
+            LineTo(dc, centerX, centerY + Scale(3));
+            LineTo(dc, centerX + Scale(5), centerY - Scale(2));
             SelectObject(dc, oldPen);
             DeleteObject(pen);
             HBRUSH border = CreateSolidBrush(RGB(45, 51, 53));
@@ -679,10 +718,10 @@ void SetExpanded(bool expanded) {
         ShowWindow(GetDlgItem(g_window, id), expanded ? SW_SHOW : SW_HIDE);
     SetWindowTextW(GetDlgItem(g_window, kAdvanced),
                    expanded ? L"Menos ajustes" : L"Más ajustes");
-    RECT bounds = {0, 0, kClientWidth,
-                   expanded ? kClientExpandedHeight : kClientCompactHeight};
-    AdjustWindowRectEx(&bounds, static_cast<DWORD>(GetWindowLongW(g_window, GWL_STYLE)),
-                       FALSE, static_cast<DWORD>(GetWindowLongW(g_window, GWL_EXSTYLE)));
+    RECT bounds = {0, 0, Scale(kClientWidth),
+                   Scale(expanded ? kClientExpandedHeight : kClientCompactHeight)};
+    AdjustWindowRectExForDpi(&bounds, static_cast<DWORD>(GetWindowLongW(g_window, GWL_STYLE)),
+                             FALSE, static_cast<DWORD>(GetWindowLongW(g_window, GWL_EXSTYLE)), g_dpi);
     SetWindowPos(g_window, nullptr, 0, 0,
                  bounds.right - bounds.left, bounds.bottom - bounds.top,
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -691,8 +730,9 @@ void SetExpanded(bool expanded) {
 
 void AddControl(const wchar_t* klass, const wchar_t* title, DWORD style,
                 int x, int y, int width, int height, int id) {
+    g_controlLayouts.push_back({id, {x, y, x + width, y + height}});
     HWND control = CreateWindowExW(0, klass, title, WS_CHILD | WS_VISIBLE | style,
-                                   x, y, width, height, g_window,
+                                   Scale(x), Scale(y), Scale(width), Scale(height), g_window,
                                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                    GetModuleHandleW(nullptr), nullptr);
     SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontBody), TRUE);
@@ -711,23 +751,23 @@ void BuildWindow() {
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
                301, 225, 94, 22, kInterval);
     AddControl(L"BUTTON", L"Probar tono", BS_OWNERDRAW | WS_TABSTOP,
-               18, 266, 92, 36, kTone);
+               18, 280, 186, 38, kTone);
     AddControl(L"BUTTON", L"Probar pulso", BS_OWNERDRAW | WS_TABSTOP,
-               116, 266, 92, 36, kTest);
+               216, 280, 186, 38, kTest);
     AddControl(L"BUTTON", L"Guardar", BS_OWNERDRAW | WS_TABSTOP,
-               214, 266, 92, 36, kSave);
+               18, 330, 186, 38, kSave);
     AddControl(L"BUTTON", L"Más ajustes", BS_OWNERDRAW | WS_TABSTOP,
-               312, 266, 90, 36, kAdvanced);
+               216, 330, 186, 38, kAdvanced);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 356, 94, 22, kIdle);
+               301, 435, 94, 22, kIdle);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 394, 94, 22, kDuration);
+               301, 475, 94, 22, kDuration);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 432, 94, 22, kFrequency);
+               301, 515, 94, 22, kFrequency);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 470, 94, 22, kLevel);
+               301, 555, 94, 22, kLevel);
     AddControl(L"BUTTON", L"No", BS_OWNERDRAW | WS_TABSTOP,
-               342, 500, 60, 32, kStartup);
+               342, 590, 60, 32, kStartup);
     UpdateFields();
     SetExpanded(false);
 }
@@ -759,12 +799,12 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     case WM_MEASUREITEM: {
         auto* item = reinterpret_cast<MEASUREITEMSTRUCT*>(lparam);
         if (item && item->CtlType == ODT_MENU) {
-            item->itemWidth = 180;
-            item->itemHeight = 34;
+            item->itemWidth = Scale(180);
+            item->itemHeight = Scale(34);
             return TRUE;
         }
         if (item && item->CtlID == kDevice) {
-            item->itemHeight = 30;
+            item->itemHeight = Scale(30);
             return TRUE;
         }
         break;
@@ -776,6 +816,19 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         else if (item->CtlID == kDevice) PaintCombo(item);
         else PaintButton(item);
         return TRUE;
+    }
+    case WM_DPICHANGED: {
+        g_dpi = HIWORD(wparam);
+        CreateUiFonts();
+        LayoutControls();
+        const RECT* suggested = reinterpret_cast<const RECT*>(lparam);
+        SetWindowPos(window, nullptr, suggested->left, suggested->top,
+                     suggested->right - suggested->left,
+                     suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetExpanded(g_expanded);
+        InvalidateRect(window, nullptr, TRUE);
+        return 0;
     }
     case WM_CREATE:
         g_window = window;
@@ -856,15 +909,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         return 1;
     }
     LoadConfig();
-    g_fontBody = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-    g_fontTitle = CreateFontW(-26, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-    g_fontSmall = CreateFontW(-13, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    g_dpi = GetDpiForSystem();
+    CreateUiFonts();
     g_brushBackground = CreateSolidBrush(RGB(0, 0, 0));
     g_brushPanel = CreateSolidBrush(RGB(17, 20, 21));
     g_brushInput = CreateSolidBrush(RGB(19, 22, 23));
@@ -886,8 +932,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         return 1;
     }
     constexpr DWORD windowStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    RECT bounds = {0, 0, kClientWidth, kClientCompactHeight};
-    AdjustWindowRectEx(&bounds, windowStyle, FALSE, 0);
+    RECT bounds = {0, 0, Scale(kClientWidth), Scale(kClientCompactHeight)};
+    AdjustWindowRectExForDpi(&bounds, windowStyle, FALSE, 0, g_dpi);
     const int width = bounds.right - bounds.left;
     const int height = bounds.bottom - bounds.top;
     HWND window = CreateWindowExW(0, kClassName, L"KRK Wakeup",
