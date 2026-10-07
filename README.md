@@ -18,11 +18,28 @@
 
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
-> **Estado:** v0.1.0 publicada. La compilación y el arranque pasaron en Windows; la eficacia del pulso sigue en pruebas con los parlantes reales. En una prueba los GoAux permanecieron encendidos unos 45 minutos; con un intervalo de 20 minutos entre pulsos se apagaron. El intervalo de 15 minutos está en evaluación. Aún no hay un perfil eficaz documentado y repetido durante varias horas.
+> **Estado:** v0.1.1 publicada. La compilación y el arranque pasaron en Windows; la eficacia del pulso sigue en pruebas con los parlantes reales. En una prueba los GoAux permanecieron encendidos unos 45 minutos; con un intervalo de 20 minutos entre pulsos se apagaron. Una prueba inicial con un intervalo de 18 minutos mantuvo los parlantes encendidos; se seguirá observando durante más tiempo. Aún no hay un perfil eficaz documentado y repetido durante varias horas.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
 </p>
+
+## Interfaz
+
+<p align="center">
+  <img src="assets/ui-compact.png" alt="Ventana compacta de KRK Wakeup" width="420">
+</p>
+
+<details>
+<summary>Ver ajustes de señal</summary>
+
+<p align="center">
+  <img src="assets/ui-expanded.png" alt="Ventana ampliada con ajustes de señal" width="420">
+</p>
+
+</details>
+
+Las capturas muestran la interfaz real en Windows sin una salida de audio seleccionada. La nitidez en escala 4K depende del escalado DPI de Windows; todavía falta revisarla en un monitor 4K físico.
 
 ## Por qué existe
 
@@ -32,7 +49,7 @@ La idea es sencilla: mientras la utilidad esté activa, genera un pulso discreto
 
 ## Qué ofrece
 
-- Icono junto al reloj de Windows y una ventana compacta con tema negro OLED.
+- Icono junto al reloj de Windows y una ventana compacta con tema negro OLED. Las pruebas de audio, las acciones principales y los ajustes avanzados están separados en grupos. La interfaz ajusta fuentes y controles al DPI de cada monitor para verse nítida en pantallas de alta resolución; falta validarla visualmente en un monitor 4K real.
 - Salida de audio fija: cambiar la salida predeterminada a auriculares Bluetooth no cambia el destino del pulso.
 - Prueba de tono audible de 3 segundos (440 Hz, 5 % de nivel digital), prueba del pulso configurado, pausa, intervalo configurable y cuenta regresiva del siguiente envío.
 - Ajustes ampliables de reposo estimado, duración, frecuencia y nivel digital de la señal.
@@ -43,7 +60,7 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 
 ## Descargar y probar
 
-1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.1.0-windows-x64.zip`** de la versión **v0.1.0** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.1.1-windows-x64.zip`** de la versión **v0.1.1** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
 2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva.
 3. Abre la aplicación y selecciona la salida de reproducción que corresponde al **SMSL SU-1**. Puedes comparar su nombre con **Configuración → Sistema → Sonido** de Windows.
 4. Con un volumen cómodo en los GoAux, pulsa **Probar tono**. Reproduce 3 segundos a 440 Hz y 5 % de nivel digital solo por la salida seleccionada, incluso si la aplicación está pausada. Confirma que se oye en los GoAux y no en otro dispositivo. Después, pulsa **Probar pulso**: usa la señal automática configurada, cuyo perfil inicial es **440 Hz**, **1000 ms** y **1 %** de nivel digital. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
@@ -53,7 +70,7 @@ Los campos de tiempo usan `mm:ss`. **Reposo estimado** sirve de referencia para 
 
 **Frecuencia** acepta de **10 a 15000 Hz**. Para ensayar una frecuencia baja, usa **Probar pulso**, que reproduce tus ajustes. **Probar tono** sigue siendo la prueba audible fija de 440 Hz. Las frecuencias bajas son experimentales: su eficacia para evitar el reposo aún debe comprobarse en los GoAux.
 
-Un intervalo de **20 minutos** no evitó el reposo en los GoAux de prueba; **15 minutos** sigue bajo prueba. Para uso provisional, el valor inicial de **5 minutos** deja más margen respecto a los 15 minutos estimados. Si se apagan incluso con un intervalo corto, usa **Probar tono** para confirmar la ruta de audio y ajusta nivel y duración de uno en uno. El umbral de detección de los GoAux no está publicado en su manual. Comprueba también que Windows y el SMSL SU-1 no estén silenciados.
+Un intervalo de **20 minutos** no evitó el reposo en los GoAux de prueba; **18 minutos** funcionó en una prueba inicial, pero requiere observación más larga. Para uso provisional, el valor inicial de **5 minutos** deja más margen respecto a los 15 minutos estimados. Si se apagan incluso con un intervalo corto, usa **Probar tono** para confirmar la ruta de audio y ajusta nivel y duración de uno en uno. El umbral de detección de los GoAux no está publicado en su manual. Comprueba también que Windows y el SMSL SU-1 no estén silenciados.
 
 **Al bloquear Windows con Win + L**, la utilidad sigue ejecutándose mientras el equipo permanezca encendido. Si Windows entra en suspensión o hibernación, los procesos de escritorio se pausan y los pulsos se reanudan al volver. [Documentación de Microsoft sobre suspensión](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
 
@@ -69,7 +86,7 @@ La aplicación usa la [API de dispositivos de audio de Windows](https://learn.mi
 
 En esta conexión analógica Windows identifica el **SMSL SU-1**, no los parlantes conectados al otro extremo de los RCA. Puede detectar si desaparece el DAC USB, pero no si se retira solo el cable RCA o se apagan los GoAux. Tampoco puede confirmar por software que un pulso haya reiniciado el temporizador interno de los parlantes: eso se comprueba observándolos.
 
-La ventana y el icono usan Win32; el audio, WASAPI; la compilación, CMake y MSVC. El ejecutable enlaza el runtime de C++ estáticamente. La aplicación no requiere privilegios de administrador ni modifica el firmware de los parlantes.
+La ventana y el icono usan Win32, con manifiesto Per-Monitor V2 y escalado DPI de fuentes, controles y dibujo; el audio, WASAPI; la compilación, CMake y MSVC. El ejecutable enlaza el runtime de C++ estáticamente. La aplicación no requiere privilegios de administrador ni modifica el firmware de los parlantes.
 
 ## Compilar
 
