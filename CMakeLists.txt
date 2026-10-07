@@ -17,4 +17,5 @@ target_link_libraries(krk-wakeup PRIVATE ole32 uuid shell32 advapi32 dwmapi gdi3
 if(MSVC)
     set_property(TARGET krk-wakeup PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_compile_options(krk-wakeup PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_link_options(krk-wakeup PRIVATE "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/app.manifest")
 endif()
