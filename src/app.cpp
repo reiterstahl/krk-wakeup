@@ -633,6 +633,7 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
     } else if (selected) {
         fill = RGB(38, 44, 45);
     }
+    FillRect(item->hDC, &item->rcItem, g_brushBackground);
     PaintRounded(item->hDC, item->rcItem, fill, border, Scale(10));
     std::wstring label = ReadText(item->hwndItem);
     if (id == kEnabled) label = g_config.endpointId.empty() ? L"Sin salida"
