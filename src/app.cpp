@@ -30,6 +30,7 @@ using Clock = std::chrono::steady_clock;
 namespace {
 constexpr wchar_t kClassName[] = L"KRKWakeupSettings";
 constexpr wchar_t kRunName[] = L"KRKWakeup";
+constexpr wchar_t kRunPath[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr UINT kTrayMessage = WM_APP + 1;
 constexpr UINT kTimerId = 1;
 constexpr UINT kTrayId = 1;
@@ -317,19 +318,43 @@ bool SaveConfig() {
            write(L"Startup", g_config.startup ? L"1" : L"0");
 }
 
+std::wstring StartupCommand() {
+    std::wstring executable(256, L'\0');
+    for (;;) {
+        const DWORD copied = GetModuleFileNameW(nullptr, executable.data(),
+                                                 static_cast<DWORD>(executable.size()));
+        if (copied == 0) return {};
+        if (copied < executable.size()) {
+            executable.resize(copied);
+            break;
+        }
+        if (executable.size() >= 32768) return {};
+        executable.resize(std::min<size_t>(executable.size() * 2, 32768));
+    }
+    std::wstring command = L"\"" + executable + L"\"";
+    // Windows limits Run value command lines to 260 characters.
+    return command.size() <= 260 ? command : std::wstring{};
+}
+
+bool IsStartupRegistered() {
+    const std::wstring expected = StartupCommand();
+    if (expected.empty()) return false;
+    wchar_t registered[261] = {};
+    DWORD bytes = sizeof(registered);
+    if (RegGetValueW(HKEY_CURRENT_USER, kRunPath, kRunName, RRF_RT_REG_SZ,
+                     nullptr, registered, &bytes) != ERROR_SUCCESS) return false;
+    return _wcsicmp(registered, expected.c_str()) == 0;
+}
+
 bool SetStartup(bool enabled) {
+    const std::wstring command = enabled ? StartupCommand() : std::wstring{};
+    if (enabled && command.empty()) return false;
+    if (enabled && IsStartupRegistered()) return true;
     HKEY key = nullptr;
-    const wchar_t* path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    LONG result = RegCreateKeyExW(HKEY_CURRENT_USER, path, 0, nullptr, 0,
+    LONG result = RegCreateKeyExW(HKEY_CURRENT_USER, kRunPath, 0, nullptr, 0,
                                   KEY_SET_VALUE, nullptr, &key, nullptr);
     if (result != ERROR_SUCCESS) return false;
     if (enabled) {
-        wchar_t executable[MAX_PATH + 1] = {};
-        if (!GetModuleFileNameW(nullptr, executable, MAX_PATH)) {
-            RegCloseKey(key);
-            return false;
-        }
-        const std::wstring command = std::wstring(L"\"") + executable + L"\"";
         result = RegSetValueExW(key, kRunName, 0, REG_SZ,
                                 reinterpret_cast<const BYTE*>(command.c_str()),
                                 static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
@@ -397,7 +422,7 @@ void UpdateFields() {
     SetWindowTextW(GetDlgItem(g_window, kDuration), std::to_wstring(g_config.durationMs).c_str());
     SetWindowTextW(GetDlgItem(g_window, kFrequency), std::to_wstring(g_config.frequencyHz).c_str());
     SetWindowTextW(GetDlgItem(g_window, kLevel), std::to_wstring(g_config.levelPercent).c_str());
-    g_uiStartup = g_config.startup;
+    g_uiStartup = g_config.startup && IsStartupRegistered();
     InvalidateRect(GetDlgItem(g_window, kEnabled), nullptr, TRUE);
     InvalidateRect(GetDlgItem(g_window, kStartup), nullptr, TRUE);
 }
@@ -449,7 +474,7 @@ bool SaveFromWindow(bool manualTestFollows = false) {
     }
     candidate.enabled = g_config.enabled;
     candidate.startup = g_uiStartup;
-    if (candidate.startup != g_config.startup && !SetStartup(candidate.startup)) {
+    if (!SetStartup(candidate.startup)) {
         ShowInputError(L"No se pudo actualizar el inicio con Windows.");
         return false;
     }
@@ -910,6 +935,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         return 1;
     }
     LoadConfig();
+    if (g_config.startup) SetStartup(true);
     g_dpi = GetDpiForSystem();
     CreateUiFonts();
     g_brushBackground = CreateSolidBrush(RGB(0, 0, 0));

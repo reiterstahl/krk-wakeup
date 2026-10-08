@@ -28,6 +28,9 @@ jobs:
           } finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
           }
+      - name: Test Windows startup registration
+        shell: pwsh
+        run: ./tools/test-startup.ps1
       - name: Capture app window
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
