@@ -18,7 +18,7 @@
 
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
-> **Estado:** v0.1.1 publicada. La compilación y el arranque pasaron en Windows; la eficacia del pulso sigue en pruebas con los parlantes reales. En una prueba los GoAux permanecieron encendidos unos 45 minutos; con un intervalo de 20 minutos entre pulsos se apagaron. Una prueba inicial con un intervalo de 18 minutos mantuvo los parlantes encendidos; se seguirá observando durante más tiempo. Aún no hay un perfil eficaz documentado y repetido durante varias horas.
+> **Estado:** v0.1.2 publicada. La compilación y las pruebas automatizadas de arranque y registro pasaron en Windows; la eficacia del pulso sigue en pruebas con los parlantes reales. En una prueba los GoAux permanecieron encendidos unos 45 minutos; con un intervalo de 20 minutos entre pulsos se apagaron. Una prueba inicial con un intervalo de 18 minutos mantuvo los parlantes encendidos; se seguirá observando durante más tiempo. Aún no hay un perfil eficaz documentado y repetido durante varias horas.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
@@ -60,8 +60,8 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 
 ## Descargar y probar
 
-1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.1.1-windows-x64.zip`** de la versión **v0.1.1** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
-2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva.
+1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.1.2-windows-x64.zip`** de la versión **v0.1.2** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva. Ejecuta v0.1.2 manualmente una vez: si ya tenías activado el inicio con Windows, actualizará la ruta registrada para el nuevo ejecutable.
 3. Abre la aplicación y selecciona la salida de reproducción que corresponde al **SMSL SU-1**. Puedes comparar su nombre con **Configuración → Sistema → Sonido** de Windows.
 4. Con un volumen cómodo en los GoAux, pulsa **Probar tono**. Reproduce 3 segundos a 440 Hz y 5 % de nivel digital solo por la salida seleccionada, incluso si la aplicación está pausada. Confirma que se oye en los GoAux y no en otro dispositivo. Después, pulsa **Probar pulso**: usa la señal automática configurada, cuyo perfil inicial es **440 Hz**, **1000 ms** y **1 %** de nivel digital. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
 5. Guarda la configuración. Cambia la salida predeterminada de Windows a tus auriculares BT y comprueba que la prueba sigue saliendo solo por el DAC. Después, deja los GoAux sin otro audio durante más de su tiempo habitual de reposo y observa si permanecen activos.
@@ -76,9 +76,9 @@ Un intervalo de **20 minutos** no evitó el reposo en los GoAux de prueba; **18 
 
 ## Inicio con Windows
 
-El ejecutable es portable. Extráelo primero a una carpeta donde vaya a permanecer. En la app, abre **Más ajustes**, cambia **Iniciar con Windows** a **Sí** y pulsa **Guardar**. La app guarda la ruta completa del `.exe` en la [clave `Run` de tu usuario](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows lo iniciará cada vez que entres en esa cuenta. No hace falta instalarlo, y la opción viene desactivada inicialmente. El registro de inicio está implementado, pero aún falta comprobarlo tras un nuevo inicio de sesión en el equipo de prueba.
+El ejecutable es portable. Extráelo primero a una carpeta donde vaya a permanecer. En la app, abre **Más ajustes**, cambia **Iniciar con Windows** a **Sí** y pulsa **Guardar**. La app guarda la ruta completa del `.exe` en la [clave `Run` de tu usuario](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows lo iniciará al entrar en esa cuenta. No hace falta instalarlo, y la opción viene desactivada inicialmente. Desde v0.1.2, abrir la app repara una entrada ausente o con ruta anterior si la opción estaba activada; **Guardar** también actualiza siempre el registro. La reparación se prueba automáticamente en Windows, aunque todavía falta comprobar un nuevo inicio de sesión real con v0.1.2.
 
-Si después mueves o renombras el ejecutable, desactiva la opción, guarda, vuelve a activarla y guarda de nuevo para registrar la nueva ruta. Puedes desactivar el inicio del mismo modo. La app guarda sus ajustes aparte, en `%LOCALAPPDATA%\KRKWakeup\settings.ini`.
+Si mueves o renombras el ejecutable, abre la app desde su nueva ubicación para que repare la ruta; también puedes pulsar **Guardar**. Al entrar en Windows, la app puede iniciar oculta en el área de notificación: revisa los iconos ocultos junto al reloj. Si no aparece, comprueba que **KRK Wakeup** esté activado en **Configuración → Aplicaciones → Inicio** de Windows y que el `.exe` permanezca en su carpeta. Puedes desactivar el inicio desde la app. Los ajustes se guardan aparte en `%LOCALAPPDATA%\KRKWakeup\settings.ini`.
 
 ## Cómo funciona
 
@@ -97,7 +97,7 @@ cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-El archivo estará en `build\Release\krk-wakeup.exe`. Cada cambio en `main` ejecuta la compilación y una prueba de arranque en GitHub Actions. Esta prueba no mide el reposo físico; los [pasos de validación](docs/PLAN.md) describen esa comprobación.
+El archivo estará en `build\Release\krk-wakeup.exe`. Cada cambio en `main` ejecuta la compilación, una prueba de arranque y una prueba de reparación del registro de inicio en GitHub Actions. Esta prueba no mide el reposo físico; los [pasos de validación](docs/PLAN.md) describen esa comprobación.
 
 ## Proyecto
 

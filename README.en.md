@@ -18,7 +18,7 @@
 
 **KRK Wakeup** is a small Windows utility that sends a short audio signal to an output you choose. It was created to prevent KRK GoAux 3 speakers connected over RCA to an SMSL SU-1 from entering standby during long pauses.
 
-> **Status:** v0.1.1 is released. The Windows build and startup check passed; the pulse's effectiveness is still being tested on physical speakers. In one trial the GoAux stayed on for about 45 minutes, but they went to sleep with a 20-minute pulse interval. An initial test at an 18-minute interval kept the speakers awake; longer observation is still needed. No pulse profile has yet been documented and repeated over several hours.
+> **Status:** v0.1.2 is released. The Windows build, startup smoke test, and registration test passed; the pulse's effectiveness is still being tested on physical speakers. In one trial the GoAux stayed on for about 45 minutes, but they went to sleep with a 20-minute pulse interval. An initial test at an 18-minute interval kept the speakers awake; longer observation is still needed. No pulse profile has yet been documented and repeated over several hours.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: a short signal to keep your speakers ready" width="100%">
@@ -60,8 +60,8 @@ The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → K
 
 ## Download and test
 
-1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.1.1-windows-x64.zip`** from **v0.1.1**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
-2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place.
+1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.1.2-windows-x64.zip`** from **v0.1.2**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place. Run v0.1.2 manually once: if startup was enabled, it will update the registered path to this executable.
 3. Open the app and select the playback output corresponding to the **SMSL SU-1**. You can compare its name with **Settings → System → Sound** in Windows.
 4. Set the GoAux speakers to a comfortable volume, then click **Probar tono** (Test tone). It plays for three seconds at 440 Hz and 5% digital level only through the selected output, even if the app is paused. Confirm that you hear it on the GoAux and nowhere else. Next, click **Probar pulso** (Test pulse): it uses the configured automatic signal, initially **440 Hz**, **1000 ms**, and **1%** digital level. Change these values under **Más ajustes** (More settings) if the signal is annoying or fails to prevent standby.
 5. Save your settings. Switch the Windows default output to Bluetooth headphones and confirm the test still plays only through the DAC. Then leave the GoAux without other audio for longer than their usual standby time and check whether they remain active.
@@ -76,9 +76,9 @@ A **20-minute** interval did not prevent standby in the tested GoAux; **18 minut
 
 ## Start with Windows
 
-The executable is portable. Extract it to a folder where it will stay. In the app, open **Más ajustes** (More settings), switch **Iniciar con Windows** (Start with Windows) to **Sí** (Yes), and click **Guardar** (Save). The app writes the full `.exe` path to the [current user's `Run` key](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows launches it whenever you sign in to that account. No installer is needed, and this option is off by default. Startup registration is implemented, but it has not yet been checked after a fresh sign-in on the test machine.
+The executable is portable. Extract it to a folder where it will stay. In the app, open **Más ajustes** (More settings), switch **Iniciar con Windows** (Start with Windows) to **Sí** (Yes), and click **Guardar** (Save). The app writes the full `.exe` path to the [current user's `Run` key](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows launches it when you sign in to that account. No installer is needed, and this option is off by default. Since v0.1.2, launching the app repairs a missing or stale entry when startup is enabled; **Guardar** also refreshes the registration every time. Windows CI tests that repair, but a real sign-in with v0.1.2 still needs checking.
 
-If you later move or rename the executable, turn the option off and save, then turn it on and save again to register the new path. You can disable startup the same way. Settings are stored separately at `%LOCALAPPDATA%\KRKWakeup\settings.ini`.
+If you move or rename the executable, open it from its new location to repair the path; clicking **Guardar** also updates it. At sign-in the app may start hidden in the notification area, so check the hidden icons near the clock. If it is absent, check that **KRK Wakeup** is enabled under **Windows Settings → Apps → Startup** and that the `.exe` remains in its folder. You can disable startup in the app. Settings are stored separately at `%LOCALAPPDATA%\KRKWakeup\settings.ini`.
 
 ## How it works
 
@@ -97,7 +97,7 @@ cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-The executable will be at `build\Release\krk-wakeup.exe`. Every change to `main` triggers a build and startup smoke test in GitHub Actions. This test does not measure physical standby behavior; the [validation plan](docs/PLAN.md) describes that check (currently in Spanish).
+The executable will be at `build\Release\krk-wakeup.exe`. Every change to `main` triggers a build, startup smoke test, and startup registration repair test in GitHub Actions. This test does not measure physical standby behavior; the [validation plan](docs/PLAN.md) describes that check (currently in Spanish).
 
 ## Project
 

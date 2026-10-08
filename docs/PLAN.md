@@ -1,6 +1,6 @@
 # Plan inicial de KRK Wakeup
 
-Fecha de investigación: 2026-10-06. Estado: v0.1.1 preparada; una prueba mantuvo los GoAux 3 encendidos unos 45 minutos, mientras que un intervalo de 20 minutos permitió que entraran en reposo. Una prueba inicial con 18 minutos funcionó; falta observación prolongada.
+Fecha de investigación: 2026-10-06. Estado: v0.1.2 incorpora una corrección del inicio con Windows; una prueba mantuvo los GoAux 3 encendidos unos 45 minutos, mientras que un intervalo de 20 minutos permitió que entraran en reposo. Una prueba inicial con 18 minutos funcionó; falta observación prolongada.
 
 ## Objetivo
 
