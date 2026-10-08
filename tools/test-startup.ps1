@@ -46,7 +46,15 @@ Startup=1
     [StartupTestWindow]::SendMessage($window, 0x0111, [IntPtr]109, [IntPtr]::Zero) | Out-Null
     $registered = (Get-ItemPropertyValue -Path $runKey -Name KRKWakeup)
     if ($registered -ine $expected) { throw "Save did not repair Run entry: $registered" }
-    Write-Host 'Startup registration repaired on launch and save.'
+    [StartupTestWindow]::SendMessage($window, 0x0111, [IntPtr]108, [IntPtr]::Zero) | Out-Null
+    [StartupTestWindow]::SendMessage($window, 0x0111, [IntPtr]109, [IntPtr]::Zero) | Out-Null
+    $removed = (Get-ItemProperty -Path $runKey -Name KRKWakeup -ErrorAction SilentlyContinue).KRKWakeup
+    if ($null -ne $removed) { throw 'Disabling startup did not remove Run entry' }
+    [StartupTestWindow]::SendMessage($window, 0x0111, [IntPtr]108, [IntPtr]::Zero) | Out-Null
+    [StartupTestWindow]::SendMessage($window, 0x0111, [IntPtr]109, [IntPtr]::Zero) | Out-Null
+    $registered = (Get-ItemPropertyValue -Path $runKey -Name KRKWakeup)
+    if ($registered -ine $expected) { throw "Enabling startup did not register Run entry: $registered" }
+    Write-Host 'Startup registration repaired on launch and save; toggle off and on passed.'
 } finally {
     if ($process) {
         $process.Refresh()
