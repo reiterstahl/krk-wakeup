@@ -17,6 +17,7 @@ $previousRun = (Get-ItemProperty -Path $runKey -Name KRKWakeup -ErrorAction Sile
 $process = $null
 try {
     New-Item -ItemType Directory -Force -Path $settingsDirectory | Out-Null
+    New-Item -Path $runKey -Force | Out-Null
     @'
 [Settings]
 EndpointId=CI-offline-device
