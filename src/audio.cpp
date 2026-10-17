@@ -1,6 +1,9 @@
 #include "audio.hpp"
+#include "playback.hpp"
 
 #include <audioclient.h>
+#include <audiopolicy.h>
+#include <endpointvolume.h>
 #include <mmdeviceapi.h>
 #include <wrl/client.h>
 
@@ -85,63 +88,99 @@ void FillBuffer(BYTE* buffer, UINT32 frames, uint64_t offset, uint64_t total,
     }
 }
 
-PulseResult Failure(HRESULT hr, bool unavailable = false) {
-    return {false, unavailable, hr};
+PulseResult Failure(HRESULT hr, const char* stage, bool unavailable = false,
+                    bool blockedByVolume = false) {
+    return {false, unavailable, hr, stage, blockedByVolume};
 }
 }  // namespace
 
 PulseResult RenderPulse(const std::wstring& endpointId, unsigned durationMs,
                         unsigned frequencyHz, unsigned levelPercent) {
     const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (FAILED(com)) return Failure(com);
+    if (FAILED(com)) return Failure(com, "com");
     struct ComScope { ~ComScope() { CoUninitialize(); } } comScope;
 
     ComPtr<IMMDeviceEnumerator> enumerator;
     HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
                                   IID_PPV_ARGS(&enumerator));
-    if (FAILED(hr)) return Failure(hr);
+    if (FAILED(hr)) return Failure(hr, "enumerator");
 
     ComPtr<IMMDevice> device;
     hr = enumerator->GetDevice(endpointId.c_str(), &device);
-    if (FAILED(hr)) return Failure(hr, true);
+    if (FAILED(hr)) return Failure(hr, "device", true);
     DWORD state = 0;
     hr = device->GetState(&state);
     if (FAILED(hr) || state != DEVICE_STATE_ACTIVE)
-        return Failure(FAILED(hr) ? hr : HRESULT_FROM_WIN32(ERROR_DEVICE_NOT_CONNECTED), true);
+        return Failure(FAILED(hr) ? hr : HRESULT_FROM_WIN32(ERROR_DEVICE_NOT_CONNECTED),
+                       "device_state", true);
+
+    // A successfully consumed buffer can still be inaudible when Windows has
+    // muted the endpoint or this app. Report that condition without changing it.
+    ComPtr<IAudioEndpointVolume> endpointVolume;
+    if (SUCCEEDED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr,
+                                   reinterpret_cast<void**>(endpointVolume.GetAddressOf())))) {
+        BOOL muted = FALSE;
+        float level = 1.0f;
+        endpointVolume->GetMute(&muted);
+        endpointVolume->GetMasterVolumeLevelScalar(&level);
+        if (muted || level <= 0.0f)
+            return Failure(HRESULT_FROM_WIN32(ERROR_NOT_READY), "endpoint_muted", false, true);
+    }
 
     ComPtr<IAudioClient> client;
     hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                           reinterpret_cast<void**>(client.GetAddressOf()));
-    if (FAILED(hr)) return Failure(hr);
+    if (FAILED(hr)) return Failure(hr, "activate");
 
     WAVEFORMATEX* rawFormat = nullptr;
     hr = client->GetMixFormat(&rawFormat);
-    if (FAILED(hr)) return Failure(hr);
+    if (FAILED(hr)) return Failure(hr, "mix_format");
     std::unique_ptr<WAVEFORMATEX, decltype(&CoTaskMemFree)> wave(rawFormat, CoTaskMemFree);
     Format format;
-    if (!DecodeFormat(wave.get(), format)) return Failure(AUDCLNT_E_UNSUPPORTED_FORMAT);
+    if (!DecodeFormat(wave.get(), format)) return Failure(AUDCLNT_E_UNSUPPORTED_FORMAT, "decode_format");
 
     hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 0, 0, wave.get(), nullptr);
-    if (FAILED(hr)) return Failure(hr);
+    if (FAILED(hr)) return Failure(hr, "initialize");
+    ComPtr<ISimpleAudioVolume> sessionVolume;
+    if (SUCCEEDED(client->GetService(IID_PPV_ARGS(&sessionVolume)))) {
+        BOOL muted = FALSE;
+        float level = 1.0f;
+        sessionVolume->GetMute(&muted);
+        sessionVolume->GetMasterVolume(&level);
+        if (muted || level <= 0.0f)
+            return Failure(HRESULT_FROM_WIN32(ERROR_NOT_READY), "session_muted", false, true);
+    }
     ComPtr<IAudioRenderClient> render;
     hr = client->GetService(IID_PPV_ARGS(&render));
-    if (FAILED(hr)) return Failure(hr);
+    if (FAILED(hr)) return Failure(hr, "render_service");
     UINT32 bufferFrames = 0;
     hr = client->GetBufferSize(&bufferFrames);
-    if (FAILED(hr)) return Failure(hr);
-    hr = client->Start();
-    if (FAILED(hr)) return Failure(hr);
+    if (FAILED(hr) || bufferFrames == 0)
+        return Failure(FAILED(hr) ? hr : E_UNEXPECTED, "buffer_size");
 
     const uint64_t total = std::max<uint64_t>(1,
         static_cast<uint64_t>(durationMs) * format.sampleRate / 1000);
-    uint64_t written = 0;
+    const UINT32 initial = static_cast<UINT32>(std::min<uint64_t>(bufferFrames, total));
+    BYTE* initialBuffer = nullptr;
+    hr = render->GetBuffer(initial, &initialBuffer);
+    if (FAILED(hr)) return Failure(hr, "prefill_buffer");
+    FillBuffer(initialBuffer, initial, 0, total, format, frequencyHz, levelPercent);
+    hr = render->ReleaseBuffer(initial, 0);
+    if (FAILED(hr)) return Failure(hr, "prefill_release");
+    hr = client->Start();
+    if (FAILED(hr)) return Failure(hr, "start");
+
+    uint64_t written = initial;
+    const char* stage = "write";
     const ULONGLONG deadline = GetTickCount64() + durationMs + 5000;
     while (written < total) {
-        if (GetTickCount64() > deadline) {
+        if (GetTickCount64() >= deadline) {
             hr = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+            stage = "write_timeout";
             break;
         }
         UINT32 padding = 0;
+        stage = "padding";
         hr = client->GetCurrentPadding(&padding);
         if (FAILED(hr)) break;
         const UINT32 freeFrames = bufferFrames > padding ? bufferFrames - padding : 0;
@@ -151,22 +190,29 @@ PulseResult RenderPulse(const std::wstring& endpointId, unsigned durationMs,
             continue;
         }
         BYTE* buffer = nullptr;
+        stage = "buffer";
         hr = render->GetBuffer(count, &buffer);
         if (FAILED(hr)) break;
         FillBuffer(buffer, count, written, total, format, frequencyHz, levelPercent);
+        stage = "release";
         hr = render->ReleaseBuffer(count, 0);
         if (FAILED(hr)) break;
         written += count;
     }
     if (SUCCEEDED(hr)) {
-        const ULONGLONG drainDeadline = GetTickCount64() + 1500;
-        while (GetTickCount64() < drainDeadline) {
-            UINT32 padding = 0;
-            hr = client->GetCurrentPadding(&padding);
-            if (FAILED(hr) || padding == 0) break;
-            Sleep(5);
+        stage = "drain";
+        const auto drained = DrainPlayback(
+            [&](uint32_t& padding) {
+                hr = client->GetCurrentPadding(&padding);
+                return SUCCEEDED(hr);
+            }, [] { return GetTickCount64(); }, [] { Sleep(5); }, 1500);
+        if (drained == DrainResult::TimedOut) {
+            hr = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+            stage = "drain_timeout";
         }
     }
-    client->Stop();
-    return SUCCEEDED(hr) ? PulseResult{true, false, S_OK} : Failure(hr);
+    const HRESULT stopped = client->Stop();
+    if (FAILED(hr)) return Failure(hr, stage);
+    if (FAILED(stopped)) return Failure(stopped, "stop");
+    return {true, false, S_OK, "complete", false};
 }

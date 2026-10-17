@@ -15,6 +15,8 @@ jobs:
         run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: Test audio drain and timing
+        run: ctest --test-dir build -C Release --output-on-failure
       - name: Smoke test startup
         shell: pwsh
         run: |
@@ -31,6 +33,10 @@ jobs:
       - name: Test Windows startup registration
         shell: pwsh
         run: ./tools/test-startup.ps1
+      - name: Test audio recovery
+        timeout-minutes: 2
+        shell: pwsh
+        run: ./tools/test-recovery.ps1
       - name: Capture app window
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh

@@ -1,4 +1,6 @@
 #include "audio.hpp"
+#include "diagnostics.hpp"
+#include "pulse_schedule.hpp"
 
 #include <windows.h>
 #include <audioclient.h>
@@ -11,11 +13,14 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <wrl/client.h>
+#include <wtsapi32.h>
 
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cwchar>
+#include <cstdio>
+#include <cstdint>
 #include <cwctype>
 #include <memory>
 #include <iterator>
@@ -53,6 +58,7 @@ constexpr int kMenuToggle = 202;
 constexpr int kMenuTest = 203;
 constexpr int kMenuExit = 204;
 constexpr int kMenuTone = 205;
+constexpr int kMenuLog = 206;
 
 struct Config {
     std::wstring endpointId;
@@ -70,16 +76,30 @@ struct Endpoint {
     std::wstring name;
 };
 
+std::string ConfigSummary(const Config& config) {
+    return "enabled=" + std::to_string(config.enabled) +
+        " selected=" + std::to_string(!config.endpointId.empty()) +
+        " interval_s=" + std::to_string(config.intervalSeconds) +
+        " duration_ms=" + std::to_string(config.durationMs) +
+        " frequency_hz=" + std::to_string(config.frequencyHz) +
+        " level_pct=" + std::to_string(config.levelPercent);
+}
+
 struct Status {
     std::wstring message;
     Clock::time_point next;
     bool hasNext = false;
+    bool busy = false;
+    Clock::time_point started;
+    bool hasSuccess = false;
+    Clock::time_point lastSuccess;
 };
 
 class PulseWorker {
 public:
     enum class TestKind { None, Pulse, Tone };
     explicit PulseWorker(Config config) : config_(std::move(config)), next_(Clock::now()) {
+        LogEvent("worker_start", ConfigSummary(config_));
         thread_ = std::thread([this] { Loop(); });
     }
     ~PulseWorker() { Stop(); }
@@ -93,10 +113,20 @@ public:
                               config.enabled && !config.endpointId.empty();
         config_ = config;
         ++generation_;
-        next_ = Clock::now() + (activate && !manualTestFollows ? std::chrono::seconds(0)
-                                                               : std::chrono::seconds(config.intervalSeconds));
+        next_ = PulseSchedule::Reconfigure(next_, Clock::now(), config.intervalSeconds,
+                                            activate, manualTestFollows);
         status_ = config.endpointId.empty() ? L"Selecciona una salida de audio."
                   : config.enabled ? L"Activo." : L"Pausado.";
+        LogEvent("configured", ConfigSummary(config));
+        condition_.notify_one();
+    }
+    void Resume() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!config_.enabled || config_.endpointId.empty()) return;
+        ++generation_;
+        next_ = Clock::now();
+        status_ = L"Recuperando audio tras reanudar…";
+        LogEvent("recovery_requested", "reason=resume");
         condition_.notify_one();
     }
     void Test(TestKind kind) {
@@ -106,7 +136,8 @@ public:
     }
     Status Snapshot() {
         std::lock_guard<std::mutex> lock(mutex_);
-        return {status_, next_, config_.enabled && !config_.endpointId.empty()};
+        return {status_, next_, config_.enabled && !config_.endpointId.empty() && !busy_,
+                busy_, started_, hasSuccess_, lastSuccess_};
     }
     void Stop() {
         {
@@ -142,6 +173,15 @@ private:
             testPending_ = TestKind::None;
             const Config current = config_;
             const auto generation = generation_;
+            started_ = Clock::now();
+            const auto started = started_;
+            busy_ = true;
+            const auto late = test == TestKind::None
+                ? std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::milliseconds>(started - next_).count())
+                : 0;
+            LogEvent("pulse_start", std::string("kind=") +
+                (test == TestKind::Tone ? "tone" : test == TestKind::Pulse ? "test" : "automatic") +
+                " late_ms=" + std::to_string(late));
             status_ = test == TestKind::Tone ? L"Reproduciendo tono de prueba…"
                     : test == TestKind::Pulse ? L"Enviando pulso de prueba…"
                     : L"Enviando pulso…";
@@ -151,33 +191,51 @@ private:
                 : RenderPulse(current.endpointId, current.durationMs,
                               current.frequencyHz, current.levelPercent);
             lock.lock();
+            busy_ = false;
+            const auto completed = Clock::now();
+            char errorCode[24];
+            std::snprintf(errorCode, sizeof(errorCode), "0x%08lX", static_cast<unsigned long>(result.error));
+            LogEvent(result.success ? "pulse_ok" : "pulse_error",
+                std::string("stage=") + result.stage + " hr=" + errorCode +
+                " elapsed_ms=" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(completed - started).count()) +
+                " superseded=" + std::to_string(generation != generation_));
             if (stopping_) break;
             if (generation != generation_) continue;
             if (result.success) {
+                hasSuccess_ = true;
+                lastSuccess_ = completed;
                 status_ = test == TestKind::Tone ? L"Tono de prueba enviado."
                         : test == TestKind::Pulse ? L"Pulso de prueba enviado."
                         : L"Pulso enviado.";
-                next_ = Clock::now() + std::chrono::seconds(current.intervalSeconds);
-            } else if (result.unavailable) {
-                status_ = L"La salida seleccionada no está disponible. Reintentando…";
-                next_ = Clock::now() + std::chrono::seconds(15);
+                next_ = PulseSchedule::AfterSuccess(started, completed, current.intervalSeconds);
             } else {
-                wchar_t errorText[96];
-                swprintf_s(errorText, L"Error de audio 0x%08lX. Reintentando…",
-                           static_cast<unsigned long>(result.error));
-                status_ = errorText;
-                next_ = Clock::now() + std::chrono::seconds(30);
+                if (result.blockedByVolume) {
+                    status_ = L"Audio silenciado en Windows. Reintentando…";
+                } else if (result.unavailable) {
+                    status_ = L"Salida no disponible. Reintentando…";
+                } else {
+                    wchar_t errorText[96];
+                    swprintf_s(errorText, L"Error de audio 0x%08lX. Reintentando…",
+                               static_cast<unsigned long>(result.error));
+                    status_ = errorText;
+                }
+                next_ = completed + std::chrono::seconds(5);
             }
         }
+        LogEvent("worker_stop");
     }
     std::mutex mutex_;
     std::condition_variable condition_;
     std::thread thread_;
     Config config_;
     Clock::time_point next_;
+    Clock::time_point started_;
+    Clock::time_point lastSuccess_;
     std::wstring status_ = L"Iniciando…";
     uint64_t generation_ = 0;
     bool stopping_ = false;
+    bool busy_ = false;
+    bool hasSuccess_ = false;
     TestKind testPending_ = TestKind::None;
 };
 
@@ -196,6 +254,9 @@ HBRUSH g_brushPanel = nullptr;
 HBRUSH g_brushInput = nullptr;
 bool g_expanded = false;
 bool g_uiStartup = false;
+bool g_sessionNotifications = false;
+bool g_stallReported = false;
+Clock::time_point g_lastHeartbeat = Clock::now();
 void SetExpanded(bool expanded);
 constexpr int kClientWidth = 420;
 constexpr int kClientCompactHeight = 390;
@@ -521,6 +582,22 @@ void UpdateStatus() {
     if (!g_worker) return;
     const Status status = g_worker->Snapshot();
     std::wstring message = status.message;
+    const auto now = Clock::now();
+    if (status.busy && now - status.started > std::chrono::seconds(15)) {
+        message = L"Audio sin respuesta. Revisa el registro.";
+        if (!g_stallReported) LogEvent("audio_unresponsive");
+        g_stallReported = true;
+    } else {
+        g_stallReported = false;
+    }
+    if (now - g_lastHeartbeat >= std::chrono::seconds(60)) {
+        LogEvent("heartbeat", "enabled=" + std::to_string(g_config.enabled) +
+            " busy=" + std::to_string(status.busy) +
+            " next_in_s=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(status.next - now).count()) +
+            " last_ok_age_s=" + (status.hasSuccess
+                ? std::to_string(std::chrono::duration_cast<std::chrono::seconds>(now - status.lastSuccess).count()) : "none"));
+        g_lastHeartbeat = now;
+    }
     if (status.hasNext && g_config.enabled) {
         auto remaining = std::chrono::duration_cast<std::chrono::seconds>(status.next - Clock::now()).count();
         if (remaining < 0) remaining = 0;
@@ -532,7 +609,7 @@ void UpdateStatus() {
     data.hWnd = g_window;
     data.uID = kTrayId;
     data.uFlags = NIF_TIP;
-    const std::wstring tip = L"KRK Wakeup — " + status.message;
+    const std::wstring tip = L"KRK Wakeup — " + message;
     wcsncpy_s(data.szTip, tip.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_MODIFY, &data);
 }
@@ -558,6 +635,7 @@ void ShowTrayMenu() {
                 g_config.enabled ? L"Pausar" : L"Activar");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuTone, L"Probar tono");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuTest, L"Probar pulso");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuLog, L"Abrir registro");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuExit, L"Salir");
     POINT point;
     GetCursorPos(&point);
@@ -856,10 +934,24 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         InvalidateRect(window, nullptr, TRUE);
         return 0;
     }
+    case WM_POWERBROADCAST:
+        if (wparam == PBT_APMSUSPEND) LogEvent("power_suspend");
+        if (wparam == PBT_APMRESUMEAUTOMATIC) {
+            LogEvent("power_resume");
+            if (g_worker) g_worker->Resume();
+        }
+        return TRUE;
+    case WM_WTSSESSION_CHANGE:
+        if (wparam == WTS_SESSION_LOCK) LogEvent("session_lock");
+        if (wparam == WTS_SESSION_UNLOCK) LogEvent("session_unlock");
+        return 0;
     case WM_CREATE:
         g_window = window;
         BuildWindow();
         AddTrayIcon();
+        g_sessionNotifications = WTSRegisterSessionNotification(window, NOTIFY_FOR_THIS_SESSION) != FALSE;
+        if (!g_sessionNotifications) LogEvent("session_notifications_unavailable",
+                                             "error=" + std::to_string(GetLastError()));
         SetTimer(window, kTimerId, 1000, nullptr);
         return 0;
     case WM_TIMER:
@@ -887,6 +979,11 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             if (g_config.endpointId.empty()) ShowSettings();
             else g_worker->Test(PulseWorker::TestKind::Tone);
             return 0;
+        case kMenuLog: {
+            const std::wstring argument = L"\"" + DiagnosticsPath() + L"\"";
+            ShellExecuteW(window, L"open", L"notepad.exe", argument.c_str(), nullptr, SW_SHOWNORMAL);
+            return 0;
+        }
         case kMenuExit: DestroyWindow(window); return 0;
         }
         break;
@@ -904,6 +1001,8 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         ShowWindow(window, SW_HIDE);
         return 0;
     case WM_DESTROY:
+        if (g_sessionNotifications) WTSUnRegisterSessionNotification(window);
+        LogEvent("app_exit");
         KillTimer(window, kTimerId);
         if (g_worker) g_worker->Stop();
         RemoveTrayIcon();
@@ -934,6 +1033,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         CloseHandle(instanceMutex);
         return 1;
     }
+    InitDiagnostics(g_settingsPath);
+    LogEvent("app_start", "version=" KRK_WAKEUP_VERSION);
     LoadConfig();
     if (g_config.startup) SetStartup(true);
     g_dpi = GetDpiForSystem();
