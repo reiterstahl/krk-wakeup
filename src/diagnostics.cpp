@@ -26,7 +26,8 @@ void LogEvent(const char* event, const std::string& details) {
     WIN32_FILE_ATTRIBUTE_DATA info = {};
     if (GetFileAttributesExW(g_logPath.c_str(), GetFileExInfoStandard, &info) &&
         (info.nFileSizeHigh || info.nFileSizeLow >= kMaxLogBytes)) {
-        MoveFileExW(g_logPath.c_str(), g_previousPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+        if (!MoveFileExW(g_logPath.c_str(), g_previousPath.c_str(), MOVEFILE_REPLACE_EXISTING))
+            return;
     }
     HANDLE file = CreateFileW(g_logPath.c_str(), FILE_APPEND_DATA,
                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,

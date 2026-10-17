@@ -18,7 +18,7 @@
 
 **KRK Wakeup** is a small Windows utility that sends a short audio signal to an output you choose. It was created to prevent KRK GoAux 3 speakers connected over RCA to an SMSL SU-1 from entering standby during long pauses.
 
-> **Status:** v0.1.2 is released. The Windows build, startup smoke test, and registration test passed; the pulse's effectiveness is still being tested on physical speakers. In one trial the GoAux stayed on for about 45 minutes, but they went to sleep with a 20-minute pulse interval. An initial test at an 18-minute interval kept the speakers awake; longer observation is still needed. No pulse profile has yet been documented and repeated over several hours.
+> **Status:** v0.1.3 is released. Intermittent standby has been observed with an 18-minute interval, especially while the session is locked and the PC remains awake. This version fixes a case where a pulse was reported as successful before the audio buffer was fully consumed and adds local diagnostics. The cause of the specific incident and long-term effectiveness on the GoAux still require physical testing.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: a short signal to keep your speakers ready" width="100%">
@@ -54,14 +54,15 @@ The idea is simple: while the utility is active, it sends a discreet pulse befor
 - A three-second audible test tone (440 Hz at 5% digital level), a test of the configured pulse, pause, an adjustable interval, and a countdown to the next pulse.
 - Additional settings for estimated standby time, pulse duration, frequency, and digital level.
 - Optional startup when the current user signs in to Windows, without an installer or administrator rights.
-- Wait and retry when the selected output disappears; pulses are never redirected automatically to another output.
+- Retry audio failures every 5 seconds and request an immediate pulse when Windows resumes; pulses are never redirected automatically to another output.
+- Local pulse, audio error, lock, and suspend diagnostics, available through **Abrir registro** (Open log) in the notification area menu. Detects a muted output or app audio session in Windows.
 
 The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoAux 3**. Windows 10 is a later compatibility goal and still requires testing.
 
 ## Download and test
 
-1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.1.2-windows-x64.zip`** from **v0.1.2**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
-2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place. Run v0.1.2 manually once: if startup was enabled, it will update the registered path to this executable.
+1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.1.3-windows-x64.zip`** from **v0.1.3**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place. Run v0.1.3 manually once: if startup was enabled, it will update the registered path to this executable.
 3. Open the app and select the playback output corresponding to the **SMSL SU-1**. You can compare its name with **Settings → System → Sound** in Windows.
 4. Set the GoAux speakers to a comfortable volume, then click **Probar tono** (Test tone). It plays for three seconds at 440 Hz and 5% digital level only through the selected output, even if the app is paused. Confirm that you hear it on the GoAux and nowhere else. Next, click **Probar pulso** (Test pulse): it uses the configured automatic signal, initially **440 Hz**, **1000 ms**, and **1%** digital level. Change these values under **Más ajustes** (More settings) if the signal is annoying or fails to prevent standby.
 5. Save your settings. Switch the Windows default output to Bluetooth headphones and confirm the test still plays only through the DAC. Then leave the GoAux without other audio for longer than their usual standby time and check whether they remain active.
@@ -70,13 +71,23 @@ Time fields use `mm:ss`. **Reposo estimado** (Estimated standby) is a calibratio
 
 **Frecuencia** (Frequency) accepts **10 to 15000 Hz**. To try a low frequency, use **Probar pulso** (Test pulse), which plays your configured settings. **Probar tono** (Test tone) remains the fixed audible test at 440 Hz. Low frequencies are experimental: their effectiveness at preventing standby still needs to be checked on the GoAux.
 
-A **20-minute** interval did not prevent standby in the tested GoAux; **18 minutes** worked in an initial trial, but needs longer observation. For now, the default **5-minute** interval leaves more margin relative to the estimated 15-minute standby time. If they go to sleep even with a short interval, use **Probar tono** (Test tone) to confirm the audio route, then change pulse level and duration one at a time. KRK does not publish the GoAux detection threshold in its manual. Also check that neither Windows nor the SMSL SU-1 is muted.
+A **20-minute** interval did not prevent standby in the tested GoAux; **18 minutes** initially worked, but intermittent standby later occurred while the PC was locked and awake. A single missed pulse at that interval can leave about 36 minutes without an effective signal. For now, the default **5-minute** interval leaves more margin relative to the estimated 15-minute standby time. If they go to sleep even with a short interval, use **Probar tono** (Test tone) to confirm the audio route, then change pulse level and duration one at a time. KRK does not publish the GoAux detection threshold in its manual. Also check that neither Windows nor the SMSL SU-1 is muted.
 
-**Locking Windows with Win + L** leaves the utility running while the computer remains awake. If Windows enters sleep or hibernation, desktop processes pause and pulses resume when the computer wakes. See [Microsoft's sleep documentation](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
+**Locking Windows with Win + L** leaves the utility running while the computer remains awake. If Windows enters sleep or hibernation, desktop processes pause and the app requests a new pulse on resume if it is enabled and has a selected output. See [Microsoft's sleep documentation](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
+
+## Diagnose standby
+
+Version 0.1.3 fills the initial buffer before starting WASAPI and confirms a pulse only after the buffer has been consumed. If draining times out, it reports a failure and retries after 5 seconds. Regular intervals are measured between pulse starts; saving settings does not postpone an already scheduled pulse.
+
+If standby occurs again, choose **Abrir registro** (Open log) from the notification area menu. The file is at `%LOCALAPPDATA%\KRKWakeup\diagnostics.log`. It records UTC timestamps, signal parameters, attempts (`pulse_start`), results (`pulse_ok` or `pulse_error`), error codes, and lock/suspend events. A `heartbeat` every minute shows whether the app was still running and how long it had been since a confirmed pulse. At approximately 1 MiB, it keeps one previous copy as `diagnostics.previous.log`.
+
+`pulse_ok` confirms that Windows consumed the buffer; it cannot prove the DAC produced a sufficient signal or the speakers reset their timer. If a driver takes over 15 seconds to respond, the app shows **Audio sin respuesta** (Audio not responding) and logs it; a call blocked inside a driver can still require restarting the app. Logs stay local and do not include computer names, executable paths, or device identifiers.
+
+For initial testing of this fix, a **5 to 10 minute** interval provides more margin than 18 minutes. If standby occurs, keep the log before closing the app and note the approximate time. This helps distinguish a Windows error, a delay, and a confirmed pulse that did not prevent physical standby.
 
 ## Start with Windows
 
-The executable is portable. Extract it to a folder where it will stay. In the app, open **Más ajustes** (More settings), switch **Iniciar con Windows** (Start with Windows) to **Sí** (Yes), and click **Guardar** (Save). The app writes the full `.exe` path to the [current user's `Run` key](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows launches it when you sign in to that account. No installer is needed, and this option is off by default. Since v0.1.2, launching the app repairs a missing or stale entry when startup is enabled; **Guardar** also refreshes the registration every time. Windows CI tests that repair, but a real sign-in with v0.1.2 still needs checking.
+The executable is portable. Extract it to a folder where it will stay. In the app, open **Más ajustes** (More settings), switch **Iniciar con Windows** (Start with Windows) to **Sí** (Yes), and click **Guardar** (Save). The app writes the full `.exe` path to the [current user's `Run` key](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys); Windows launches it when you sign in to that account. No installer is needed, and this option is off by default. Since v0.1.2, launching the app repairs a missing or stale entry when startup is enabled; **Guardar** also refreshes the registration every time. Windows CI tests that repair, but a real sign-in with the current version still needs checking.
 
 If you move or rename the executable, open it from its new location to repair the path; clicking **Guardar** also updates it. At sign-in the app may start hidden in the notification area, so check the hidden icons near the clock. If it is absent, check that **KRK Wakeup** is enabled under **Windows Settings → Apps → Startup** and that the `.exe` remains in its folder. You can disable startup in the app. Settings are stored separately at `%LOCALAPPDATA%\KRKWakeup\settings.ini`.
 
@@ -97,7 +108,7 @@ cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-The executable will be at `build\Release\krk-wakeup.exe`. Every change to `main` triggers a build, startup smoke test, and startup registration repair test in GitHub Actions. This test does not measure physical standby behavior; the [validation plan](docs/PLAN.md) describes that check (currently in Spanish).
+The executable will be at `build\Release\krk-wakeup.exe`. Every change to `main` triggers a build, startup smoke test, startup registration repair test, audio drain/timing tests, and a recovery check with simulated lock/resume notifications in GitHub Actions. These tests do not measure physical standby behavior; the [validation plan](docs/PLAN.md) describes that check (currently in Spanish).
 
 ## Project
 
