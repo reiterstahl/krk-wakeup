@@ -15,7 +15,7 @@ jobs:
         run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel
-      - name: Test audio drain and timing
+      - name: Test audio, recovery, and optional diagnostics
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Smoke test startup
         shell: pwsh

@@ -1,6 +1,6 @@
 # Plan inicial de KRK Wakeup
 
-Fecha de investigación: 2026-10-06. Estado: v0.1.3 corrige la confirmación de audio y añade diagnóstico local; una prueba mantuvo los GoAux 3 encendidos unos 45 minutos, mientras que un intervalo de 20 minutos permitió que entraran en reposo. Una prueba inicial con 18 minutos funcionó; después se observaron apagados intermitentes con la sesión bloqueada y el PC despierto. Falta repetir la prueba física con la corrección.
+Fecha de investigación: 2026-10-06. Estado: v0.2.0 incorpora diagnóstico optativo por instancia, observación del endpoint y renderizado con tiempo límite; una prueba mantuvo los GoAux 3 encendidos unos 45 minutos, mientras que un intervalo de 20 minutos permitió que entraran en reposo. Una prueba inicial con 18 minutos funcionó; después se observaron apagados intermitentes con la sesión bloqueada y el PC despierto. También se observaron fallos con 15 minutos. El usuario confirma pantalla apagada y PC despierto; falta repetir la prueba física con la nueva corrección.
 
 ## Objetivo
 

@@ -13,7 +13,8 @@ $logs = Join-Path $folder 'Logs'
 $previousSettings = if (Test-Path $settings) { [System.IO.File]::ReadAllBytes($settings) } else { $null }
 function Current-Log {
     if (-not $process -or -not (Test-Path $logs)) { return $null }
-    return Get-ChildItem -Path $logs -Filter "krk-wakeup-*-$($process.Id)*.log" |
+    return Get-ChildItem -Path $logs -Filter 'krk-wakeup-*.log' |
+        Where-Object { $_.Name -match "-$($process.Id)(?:-part\d+)?\.log$" } |
         Sort-Object LastWriteTime | Select-Object -Last 1
 }
 function Read-Log {
@@ -102,6 +103,7 @@ Diagnostics=1
         [System.IO.File]::WriteAllBytes($settings, $previousSettings)
     }
     if ($process -and (Test-Path $logs)) {
-        Get-ChildItem -Path $logs -Filter "krk-wakeup-*-$($process.Id)*.log" | Remove-Item
+        Get-ChildItem -Path $logs -Filter 'krk-wakeup-*.log' |
+        Where-Object { $_.Name -match "-$($process.Id)(?:-part\d+)?\.log$" } | Remove-Item
     }
 }

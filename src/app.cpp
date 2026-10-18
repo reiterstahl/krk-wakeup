@@ -228,7 +228,11 @@ private:
                 : 0;
             LogEvent("pulse_start", std::string("kind=") +
                 (test == TestKind::Tone ? "tone" : test == TestKind::Pulse ? "test" : "automatic") +
-                " late_ms=" + std::to_string(late));
+                " late_ms=" + std::to_string(late) +
+                " duration_ms=" + std::to_string(test == TestKind::Tone ? 3000 : current.durationMs) +
+                " frequency_hz=" + std::to_string(test == TestKind::Tone ? 440 : current.frequencyHz) +
+                " level_pct=" + std::to_string(test == TestKind::Tone ? 5 : current.levelPercent) +
+                " interval_s=" + std::to_string(current.intervalSeconds));
             status_ = test == TestKind::Tone ? L"Reproduciendo tono de prueba…"
                     : test == TestKind::Pulse ? L"Enviando pulso de prueba…"
                     : L"Enviando pulso…";
@@ -676,7 +680,8 @@ void UpdateStatus() {
     std::wstring activity;
     if (g_config.endpointId.empty()) activity = L"Audio observado: selecciona una salida";
     else if (audio.state == AudioActivityState::Unavailable) activity = L"Monitor de audio: salida no disponible";
-    else if (audio.state == AudioActivityState::Unknown) activity = L"Monitor de audio: esperando una lectura";
+    else if (audio.state == AudioActivityState::Unknown) activity =
+        std::strcmp(audio.stage, "activity_stalled") == 0 ? L"Monitor de audio sin respuesta" : L"Monitor de audio: esperando una lectura";
     else if (audio.hasLastActivity) {
         const unsigned age = static_cast<unsigned>(std::min<uint64_t>((tick - audio.lastActivityTickMs) / 1000, 999999));
         activity = L"Audio observado hace " + FormatTime(age);
@@ -955,9 +960,20 @@ void SetExpanded(bool expanded) {
                    Scale(expanded ? kClientExpandedHeight : kClientCompactHeight)};
     AdjustWindowRectExForDpi(&bounds, static_cast<DWORD>(GetWindowLongW(g_window, GWL_STYLE)),
                              FALSE, static_cast<DWORD>(GetWindowLongW(g_window, GWL_EXSTYLE)), g_dpi);
-    SetWindowPos(g_window, nullptr, 0, 0,
-                 bounds.right - bounds.left, bounds.bottom - bounds.top,
-                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    const int width = bounds.right - bounds.left;
+    const int height = bounds.bottom - bounds.top;
+    RECT position{};
+    GetWindowRect(g_window, &position);
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (GetMonitorInfoW(MonitorFromWindow(g_window, MONITOR_DEFAULTTONEAREST), &monitor)) {
+        position.left = std::max(monitor.rcWork.left,
+                                 std::min(position.left, monitor.rcWork.right - width));
+        position.top = std::max(monitor.rcWork.top,
+                                std::min(position.top, monitor.rcWork.bottom - height));
+    }
+    SetWindowPos(g_window, nullptr, position.left, position.top, width, height,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
     InvalidateRect(g_window, nullptr, TRUE);
 }
 
@@ -1195,7 +1211,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
     LoadConfig();
     InitDiagnostics(g_settingsPath);
-    if (!SetDiagnosticsEnabled(g_config.diagnostics)) g_config.diagnostics = false;
+    const bool diagnosticsInitFailed = !SetDiagnosticsEnabled(g_config.diagnostics);
+    if (diagnosticsInitFailed) g_config.diagnostics = false;
     LogEvent("app_start", "version=" KRK_WAKEUP_VERSION);
     if (g_config.startup) SetStartup(true);
     g_dpi = GetDpiForSystem();
@@ -1248,6 +1265,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     DwmSetWindowAttribute(window, DWMWA_CAPTION_COLOR,
                           &caption, sizeof(caption));
     RefreshEndpoints();
+    if (diagnosticsInitFailed)
+        MessageBoxW(window, L"No se pudo crear el registro de diagnóstico. Revisa el acceso a la carpeta de ajustes.",
+                    L"KRK Wakeup", MB_OK | MB_ICONWARNING);
     if (g_config.endpointId.empty()) ShowSettings();
     UpdateStatus();
     MSG message;

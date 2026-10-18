@@ -59,12 +59,12 @@ bool WriteLocked(const char* event, const std::string& details) {
     GetSystemTime(&utc);
     char prefix[224];
     std::snprintf(prefix, sizeof(prefix),
-        "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ tick_ms=%llu instance=%s pid=%lu event=%s",
+        "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ tick_ms=%llu instance=%s pid=%lu version=%s event=%s",
         static_cast<unsigned>(utc.wYear), static_cast<unsigned>(utc.wMonth),
         static_cast<unsigned>(utc.wDay), static_cast<unsigned>(utc.wHour),
         static_cast<unsigned>(utc.wMinute), static_cast<unsigned>(utc.wSecond),
         static_cast<unsigned>(utc.wMilliseconds), static_cast<unsigned long long>(GetTickCount64()),
-        g_instance.c_str(), GetCurrentProcessId(), event);
+        g_instance.c_str(), GetCurrentProcessId(), KRK_WAKEUP_VERSION, event);
     const std::string line = std::string(prefix) + (details.empty() ? "" : " " + details) + "\r\n";
     DWORD written = 0;
     const bool ok = WriteFile(file, line.data(), static_cast<DWORD>(line.size()), &written, nullptr) &&
