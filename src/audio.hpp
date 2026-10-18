@@ -7,7 +7,7 @@ struct PulseResult {
     bool success = false;
     bool unavailable = false;
     HRESULT error = S_OK;
-    const char* stage = "none";
+    std::string stage = "none";
     bool blockedByVolume = false;
 };
 

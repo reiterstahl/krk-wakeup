@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(KRKWakeup VERSION 0.1.3 LANGUAGES CXX RC)
+project(KRKWakeup VERSION 0.2.0 LANGUAGES CXX RC)
 
 if(NOT WIN32)
     message(FATAL_ERROR "KRK Wakeup requires Windows")
@@ -9,6 +9,10 @@ add_executable(krk-wakeup WIN32
     src/app.cpp
     src/audio.cpp
     src/audio.hpp
+    src/audio_process.cpp
+    src/audio_process.hpp
+    src/audio_activity.cpp
+    src/audio_activity.hpp
     src/diagnostics.cpp
     src/diagnostics.hpp
     src/playback.hpp
@@ -16,7 +20,7 @@ add_executable(krk-wakeup WIN32
     app.rc
 )
 target_compile_features(krk-wakeup PRIVATE cxx_std_17)
-target_compile_definitions(krk-wakeup PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX KRK_WAKEUP_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(krk-wakeup PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00 KRK_WAKEUP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(krk-wakeup PRIVATE ole32 uuid shell32 advapi32 dwmapi gdi32 comctl32 wtsapi32)
 if(MSVC)
     set_property(TARGET krk-wakeup PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -30,4 +34,20 @@ if(BUILD_TESTING)
     target_compile_features(timing-tests PRIVATE cxx_std_17)
     target_include_directories(timing-tests PRIVATE src)
     add_test(NAME audio-drain-and-timing COMMAND timing-tests)
+    add_executable(audio-process-tests tests/audio_process_tests.cpp src/audio_process.cpp)
+    target_link_libraries(audio-process-tests PRIVATE shell32)
+    add_executable(diagnostics-tests tests/diagnostics_tests.cpp src/diagnostics.cpp)
+    foreach(test_target IN ITEMS audio-process-tests diagnostics-tests)
+        target_compile_features(${test_target} PRIVATE cxx_std_17)
+        target_include_directories(${test_target} PRIVATE src)
+        target_compile_definitions(${test_target} PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+                                   _WIN32_WINNT=0x0A00 KRK_WAKEUP_VERSION="${PROJECT_VERSION}")
+        if(MSVC)
+            target_compile_options(${test_target} PRIVATE /W4 /permissive- /EHsc /utf-8)
+        endif()
+    endforeach()
+    add_test(NAME isolated-audio-recovery COMMAND audio-process-tests)
+    set_tests_properties(isolated-audio-recovery PROPERTIES TIMEOUT 35)
+    add_test(NAME optional-instance-diagnostics COMMAND diagnostics-tests)
+    set_tests_properties(optional-instance-diagnostics PROPERTIES TIMEOUT 20)
 endif()

@@ -9,20 +9,20 @@ public static class RecoveryTestWindow {
 '@
 $folder = Join-Path $env:LOCALAPPDATA 'KRKWakeup'
 $settings = Join-Path $folder 'settings.ini'
-$log = Join-Path $folder 'diagnostics.log'
-$oldLog = Join-Path $folder 'diagnostics.previous.log'
-$backups = @{}
-foreach ($path in @($settings, $log, $oldLog)) {
-    $backups[$path] = if (Test-Path $path) { [System.IO.File]::ReadAllBytes($path) } else { $null }
+$logs = Join-Path $folder 'Logs'
+$previousSettings = if (Test-Path $settings) { [System.IO.File]::ReadAllBytes($settings) } else { $null }
+function Current-Log {
+    if (-not $process -or -not (Test-Path $logs)) { return $null }
+    return Get-ChildItem -Path $logs -Filter "krk-wakeup-*-$($process.Id)*.log" |
+        Sort-Object LastWriteTime | Select-Object -Last 1
 }
 function Read-Log {
-    if (Test-Path $log) {
-        $stream = [System.IO.File]::Open($log, [System.IO.FileMode]::Open,
-            [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
-        $reader = [System.IO.StreamReader]::new($stream)
-        try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
-    }
-    return ''
+    $file = Current-Log
+    if (-not $file) { return '' }
+    $stream = [System.IO.File]::Open($file.FullName, [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+    $reader = [System.IO.StreamReader]::new($stream)
+    try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 function Wait-Until([scriptblock] $condition, [string] $description, [int] $timeoutMs = 5000) {
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -42,7 +42,6 @@ function Send-AppMessage([uint32] $message, [int] $value) {
 $process = $null
 try {
     New-Item -ItemType Directory -Force -Path $folder | Out-Null
-    Remove-Item $log -ErrorAction SilentlyContinue
     @'
 [Settings]
 EndpointId=CI-offline-device
@@ -53,6 +52,7 @@ FrequencyHz=80
 LevelPercent=1
 Enabled=1
 Startup=0
+Diagnostics=1
 '@ | Set-Content -Path $settings -Encoding Unicode
     $process = Start-Process -FilePath 'build/Release/krk-wakeup.exe' -PassThru
     $script:window = [IntPtr]::Zero
@@ -66,13 +66,22 @@ Startup=0
     Send-AppMessage 0x0218 18 # PBT_APMRESUMEAUTOMATIC
     Wait-Until {
         ([regex]::Matches((Read-Log), 'event=pulse_error\b')).Count -ge 2
-    } 'immediate audio retry on resume' 2000
+    } 'immediate audio retry on resume' 4000
     if ((Read-Log) -notmatch 'event=recovery_requested reason=resume') { throw 'Resume did not rearm the worker' }
     # A failed endpoint must keep retrying while the window is hidden and the
     # session notification says locked, instead of waiting another 18 minutes.
     Wait-Until {
         ([regex]::Matches((Read-Log), 'event=pulse_error\b')).Count -ge 3
     } 'retry while hidden after lock notification' 7000
+    if ((Read-Log) -notmatch 'event=endpoint_observation state=unavailable') {
+        throw 'Missing selected-endpoint monitoring diagnostic'
+    }
+    Send-AppMessage 0x0111 207 # Turn optional diagnostics off
+    $offSize = (Current-Log).Length
+    Start-Sleep -Milliseconds 5500
+    if ((Current-Log).Length -ne $offSize) { throw 'Disabled diagnostics kept writing' }
+    Send-AppMessage 0x0111 207 # Enable again without saving unrelated audio settings
+    Wait-Until { (Read-Log) -match 'event=instance_snapshot' } 'diagnostics session snapshot'
     Send-AppMessage 0x02B1 8 # WTS_SESSION_UNLOCK
     Send-AppMessage 0x0111 107 # Pause
     $attempts = ([regex]::Matches((Read-Log), 'event=pulse_start\b')).Count
@@ -87,11 +96,12 @@ Startup=0
         $process.Refresh()
         if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
     }
-    foreach ($path in $backups.Keys) {
-        if ($null -eq $backups[$path]) {
-            Remove-Item $path -ErrorAction SilentlyContinue
-        } else {
-            [System.IO.File]::WriteAllBytes($path, $backups[$path])
-        }
+    if ($null -eq $previousSettings) {
+        Remove-Item $settings -ErrorAction SilentlyContinue
+    } else {
+        [System.IO.File]::WriteAllBytes($settings, $previousSettings)
+    }
+    if ($process -and (Test-Path $logs)) {
+        Get-ChildItem -Path $logs -Filter "krk-wakeup-*-$($process.Id)*.log" | Remove-Item
     }
 }

@@ -1,4 +1,6 @@
 #include "audio.hpp"
+#include "audio_activity.hpp"
+#include "audio_process.hpp"
 #include "diagnostics.hpp"
 #include "pulse_schedule.hpp"
 
@@ -21,6 +23,7 @@
 #include <cwchar>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <cwctype>
 #include <memory>
 #include <iterator>
@@ -53,12 +56,14 @@ constexpr int kTest = 110;
 constexpr int kStatus = 111;
 constexpr int kAdvanced = 112;
 constexpr int kTone = 113;
+constexpr int kActivity = 114;
 constexpr int kMenuOpen = 201;
 constexpr int kMenuToggle = 202;
 constexpr int kMenuTest = 203;
 constexpr int kMenuExit = 204;
 constexpr int kMenuTone = 205;
 constexpr int kMenuLog = 206;
+constexpr int kMenuDiagnostics = 207;
 
 struct Config {
     std::wstring endpointId;
@@ -69,6 +74,7 @@ struct Config {
     unsigned levelPercent = 1;
     bool enabled = true;
     bool startup = false;
+    bool diagnostics = false;
 };
 
 struct Endpoint {
@@ -82,7 +88,20 @@ std::string ConfigSummary(const Config& config) {
         " interval_s=" + std::to_string(config.intervalSeconds) +
         " duration_ms=" + std::to_string(config.durationMs) +
         " frequency_hz=" + std::to_string(config.frequencyHz) +
-        " level_pct=" + std::to_string(config.levelPercent);
+        " level_pct=" + std::to_string(config.levelPercent) +
+        " diagnostics=" + std::to_string(config.diagnostics);
+}
+
+std::string UtcNow() {
+    SYSTEMTIME utc;
+    GetSystemTime(&utc);
+    char text[32];
+    std::snprintf(text, sizeof(text), "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
+        static_cast<unsigned>(utc.wYear), static_cast<unsigned>(utc.wMonth),
+        static_cast<unsigned>(utc.wDay), static_cast<unsigned>(utc.wHour),
+        static_cast<unsigned>(utc.wMinute), static_cast<unsigned>(utc.wSecond),
+        static_cast<unsigned>(utc.wMilliseconds));
+    return text;
 }
 
 struct Status {
@@ -92,7 +111,9 @@ struct Status {
     bool busy = false;
     Clock::time_point started;
     bool hasSuccess = false;
-    Clock::time_point lastSuccess;
+    uint64_t lastSuccessTickMs = 0;
+    std::string lastSuccessUtc;
+    bool suspended = false;
 };
 
 class PulseWorker {
@@ -111,6 +132,16 @@ public:
         const bool activate = (!config_.enabled || config_.endpointId.empty() ||
                                config_.endpointId != config.endpointId) &&
                               config.enabled && !config.endpointId.empty();
+        const bool endpointChanged = config_.endpointId != config.endpointId;
+        const bool renderChanged = endpointChanged || config_.enabled != config.enabled ||
+            config_.durationMs != config.durationMs || config_.frequencyHz != config.frequencyHz ||
+            config_.levelPercent != config.levelPercent;
+        if (endpointChanged) {
+            hasSuccess_ = false;
+            lastSuccessTickMs_ = 0;
+            lastSuccessUtc_.clear();
+        }
+        if (renderChanged) ++renderGeneration_;
         config_ = config;
         ++generation_;
         next_ = PulseSchedule::Reconfigure(next_, Clock::now(), config.intervalSeconds,
@@ -120,29 +151,41 @@ public:
         LogEvent("configured", ConfigSummary(config));
         condition_.notify_one();
     }
+    void Suspend() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        suspended_ = true;
+        ++generation_;
+        ++renderGeneration_;
+        condition_.notify_one();
+    }
     void Resume() {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!config_.enabled || config_.endpointId.empty()) return;
+        suspended_ = false;
         ++generation_;
-        next_ = Clock::now();
-        status_ = L"Recuperando audio tras reanudar…";
-        LogEvent("recovery_requested", "reason=resume");
+        ++renderGeneration_;
+        if (config_.enabled && !config_.endpointId.empty()) {
+            next_ = Clock::now();
+            status_ = L"Recuperando audio tras reanudar…";
+            LogEvent("recovery_requested", "reason=resume");
+        }
         condition_.notify_one();
     }
     void Test(TestKind kind) {
         std::lock_guard<std::mutex> lock(mutex_);
         testPending_ = kind;
+        if (busy_) ++renderGeneration_;
         condition_.notify_one();
     }
     Status Snapshot() {
         std::lock_guard<std::mutex> lock(mutex_);
-        return {status_, next_, config_.enabled && !config_.endpointId.empty() && !busy_,
-                busy_, started_, hasSuccess_, lastSuccess_};
+        return {status_, next_, config_.enabled && !config_.endpointId.empty() && !busy_ && !suspended_,
+                busy_, started_, hasSuccess_, lastSuccessTickMs_, lastSuccessUtc_, suspended_};
     }
     void Stop() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             stopping_ = true;
+            ++renderGeneration_;
             condition_.notify_one();
         }
         if (thread_.joinable()) thread_.join();
@@ -151,6 +194,10 @@ private:
     void Loop() {
         std::unique_lock<std::mutex> lock(mutex_);
         while (!stopping_) {
+            if (suspended_) {
+                condition_.wait(lock, [this] { return stopping_ || !suspended_; });
+                continue;
+            }
             if (config_.endpointId.empty()) {
                 status_ = L"Selecciona una salida de audio.";
                 condition_.wait(lock, [this] { return stopping_ || !config_.endpointId.empty(); });
@@ -172,7 +219,7 @@ private:
             const TestKind test = testPending_;
             testPending_ = TestKind::None;
             const Config current = config_;
-            const auto generation = generation_;
+            const auto renderGeneration = renderGeneration_;
             started_ = Clock::now();
             const auto started = started_;
             busy_ = true;
@@ -186,10 +233,14 @@ private:
                     : test == TestKind::Pulse ? L"Enviando pulso de prueba…"
                     : L"Enviando pulso…";
             lock.unlock();
+            const auto cancelled = [this, renderGeneration] {
+                std::lock_guard<std::mutex> guard(mutex_);
+                return stopping_ || renderGeneration_ != renderGeneration;
+            };
             const PulseResult result = test == TestKind::Tone
-                ? RenderPulse(current.endpointId, 3000, 440, 5)
-                : RenderPulse(current.endpointId, current.durationMs,
-                              current.frequencyHz, current.levelPercent);
+                ? RenderPulseIsolated(current.endpointId, 3000, 440, 5, cancelled)
+                : RenderPulseIsolated(current.endpointId, current.durationMs,
+                                      current.frequencyHz, current.levelPercent, cancelled);
             lock.lock();
             busy_ = false;
             const auto completed = Clock::now();
@@ -198,16 +249,17 @@ private:
             LogEvent(result.success ? "pulse_ok" : "pulse_error",
                 std::string("stage=") + result.stage + " hr=" + errorCode +
                 " elapsed_ms=" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(completed - started).count()) +
-                " superseded=" + std::to_string(generation != generation_));
+                " superseded=" + std::to_string(renderGeneration != renderGeneration_));
             if (stopping_) break;
-            if (generation != generation_) continue;
+            if (renderGeneration != renderGeneration_) continue;
             if (result.success) {
                 hasSuccess_ = true;
-                lastSuccess_ = completed;
+                lastSuccessTickMs_ = GetTickCount64();
+                lastSuccessUtc_ = UtcNow();
                 status_ = test == TestKind::Tone ? L"Tono de prueba enviado."
                         : test == TestKind::Pulse ? L"Pulso de prueba enviado."
                         : L"Pulso enviado.";
-                next_ = PulseSchedule::AfterSuccess(started, completed, current.intervalSeconds);
+                next_ = PulseSchedule::AfterSuccess(started, completed, config_.intervalSeconds);
             } else {
                 if (result.blockedByVolume) {
                     status_ = L"Audio silenciado en Windows. Reintentando…";
@@ -230,10 +282,13 @@ private:
     Config config_;
     Clock::time_point next_;
     Clock::time_point started_;
-    Clock::time_point lastSuccess_;
+    uint64_t lastSuccessTickMs_ = 0;
+    std::string lastSuccessUtc_;
     std::wstring status_ = L"Iniciando…";
     uint64_t generation_ = 0;
+    uint64_t renderGeneration_ = 0;
     bool stopping_ = false;
+    bool suspended_ = false;
     bool busy_ = false;
     bool hasSuccess_ = false;
     TestKind testPending_ = TestKind::None;
@@ -242,6 +297,7 @@ private:
 HWND g_window = nullptr;
 Config g_config;
 std::unique_ptr<PulseWorker> g_worker;
+std::unique_ptr<AudioActivityMonitor> g_activity;
 std::wstring g_settingsPath;
 std::vector<Endpoint> g_endpoints;
 UINT g_taskbarCreated = 0;
@@ -255,12 +311,16 @@ HBRUSH g_brushInput = nullptr;
 bool g_expanded = false;
 bool g_uiStartup = false;
 bool g_sessionNotifications = false;
+HPOWERNOTIFY g_displayNotification = nullptr;
+bool g_systemSuspended = false;
+uint64_t g_lastActivityReport = 0;
+AudioActivityState g_lastActivityState = AudioActivityState::Disabled;
 bool g_stallReported = false;
 Clock::time_point g_lastHeartbeat = Clock::now();
 void SetExpanded(bool expanded);
 constexpr int kClientWidth = 420;
-constexpr int kClientCompactHeight = 390;
-constexpr int kClientExpandedHeight = 632;
+constexpr int kClientCompactHeight = 410;
+constexpr int kClientExpandedHeight = 646;
 UINT g_dpi = 96;
 struct ControlLayout { int id; RECT rect; };
 std::vector<ControlLayout> g_controlLayouts;
@@ -290,7 +350,7 @@ void LayoutControls() {
         SetWindowPos(control, nullptr, rect.left, rect.top,
                      rect.right - rect.left, rect.bottom - rect.top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
-        SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontBody), TRUE);
+        SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(layout.id == kActivity ? g_fontSmall : g_fontBody), TRUE);
     }
 }
 
@@ -362,6 +422,7 @@ void LoadConfig() {
     g_config.levelPercent = ReadNumber(L"LevelPercent", 1, 1, 10);
     g_config.enabled = ReadNumber(L"Enabled", 1, 0, 1) == 1;
     g_config.startup = ReadNumber(L"Startup", 0, 0, 1) == 1;
+    g_config.diagnostics = ReadNumber(L"Diagnostics", 0, 0, 1) == 1;
 }
 
 bool SaveConfig() {
@@ -376,7 +437,8 @@ bool SaveConfig() {
            write(L"FrequencyHz", std::to_wstring(g_config.frequencyHz)) &&
            write(L"LevelPercent", std::to_wstring(g_config.levelPercent)) &&
            write(L"Enabled", g_config.enabled ? L"1" : L"0") &&
-           write(L"Startup", g_config.startup ? L"1" : L"0");
+           write(L"Startup", g_config.startup ? L"1" : L"0") &&
+           write(L"Diagnostics", g_config.diagnostics ? L"1" : L"0");
 }
 
 std::wstring StartupCommand() {
@@ -548,6 +610,7 @@ bool SaveFromWindow(bool manualTestFollows = false) {
         return false;
     }
     g_worker->Configure(g_config, manualTestFollows);
+    if (g_activity) g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty() && !g_systemSuspended);
     InvalidateRect(g_window, nullptr, FALSE);
     if (candidate.intervalSeconds >= candidate.idleSeconds)
         MessageBoxW(g_window, L"El intervalo iguala o supera el reposo estimado. Los parlantes podrían apagarse antes del siguiente pulso.",
@@ -578,24 +641,66 @@ void RemoveTrayIcon() {
     Shell_NotifyIconW(NIM_DELETE, &data);
 }
 
+const char* ActivityStateName(AudioActivityState state) {
+    switch (state) {
+    case AudioActivityState::Disabled: return "disabled";
+    case AudioActivityState::Unknown: return "unknown";
+    case AudioActivityState::Quiet: return "quiet_sample";
+    case AudioActivityState::Active: return "active_sample";
+    case AudioActivityState::Unavailable: return "unavailable";
+    }
+    return "unknown";
+}
+
+std::string ActivitySummary(const AudioActivitySnapshot& audio, uint64_t tick) {
+    char error[24];
+    std::snprintf(error, sizeof(error), "0x%08lX", static_cast<unsigned long>(audio.error));
+    const char* coverage = audio.coverage == AudioMeterCoverage::SharedAndExclusive ? "shared_and_exclusive"
+                         : audio.coverage == AudioMeterCoverage::SharedModeOnly ? "shared_only" : "unknown";
+    return std::string("state=") + ActivityStateName(audio.state) + " stage=" + audio.stage +
+        " hr=" + error + " coverage=" + coverage +
+        " last_audio_utc=" + (audio.hasLastActivity ? audio.lastActivityUtc : "unknown") +
+        " last_audio_age_ms=" + (audio.hasLastActivity ? std::to_string(tick - audio.lastActivityTickMs) : "unknown") +
+        " poll_age_ms=" + (audio.lastPollTickMs ? std::to_string(tick - audio.lastPollTickMs) : "unknown") +
+        " endpoint_muted=" + (audio.endpointMuteKnown ? std::to_string(audio.endpointMuted) : "unknown") +
+        " endpoint_volume_pct=" + (audio.endpointVolumeKnown ? std::to_string(audio.endpointVolume * 100) : "unknown");
+}
+
 void UpdateStatus() {
     if (!g_worker) return;
     const Status status = g_worker->Snapshot();
+    const auto audio = g_activity ? g_activity->Snapshot() : AudioActivitySnapshot{};
+    const uint64_t tick = GetTickCount64();
+    std::wstring activity;
+    if (g_config.endpointId.empty()) activity = L"Audio observado: selecciona una salida";
+    else if (audio.state == AudioActivityState::Unavailable) activity = L"Monitor de audio: salida no disponible";
+    else if (audio.state == AudioActivityState::Unknown) activity = L"Monitor de audio: esperando una lectura";
+    else if (audio.hasLastActivity) {
+        const unsigned age = static_cast<unsigned>(std::min<uint64_t>((tick - audio.lastActivityTickMs) / 1000, 999999));
+        activity = L"Audio observado hace " + FormatTime(age);
+        if (audio.endpointMuteKnown && audio.endpointMuted) activity += L" · silenciado";
+    } else activity = L"Audio observado: aún sin señal detectada";
+    SetWindowTextW(GetDlgItem(g_window, kActivity), activity.c_str());
+    if (audio.state != g_lastActivityState || tick - g_lastActivityReport >= 10000) {
+        LogEvent("endpoint_observation", ActivitySummary(audio, tick));
+        g_lastActivityState = audio.state;
+        g_lastActivityReport = tick;
+    }
     std::wstring message = status.message;
     const auto now = Clock::now();
     if (status.busy && now - status.started > std::chrono::seconds(15)) {
-        message = L"Audio sin respuesta. Revisa el registro.";
+        message = L"Recuperando un envío sin respuesta…";
         if (!g_stallReported) LogEvent("audio_unresponsive");
         g_stallReported = true;
-    } else {
-        g_stallReported = false;
-    }
-    if (now - g_lastHeartbeat >= std::chrono::seconds(60)) {
+    } else g_stallReported = false;
+    if (status.suspended) message = L"Esperando reanudación de Windows.";
+    if (now - g_lastHeartbeat >= std::chrono::seconds(30)) {
         LogEvent("heartbeat", "enabled=" + std::to_string(g_config.enabled) +
-            " busy=" + std::to_string(status.busy) +
+            " busy=" + std::to_string(status.busy) + " suspended=" + std::to_string(status.suspended) +
             " next_in_s=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(status.next - now).count()) +
-            " last_ok_age_s=" + (status.hasSuccess
-                ? std::to_string(std::chrono::duration_cast<std::chrono::seconds>(now - status.lastSuccess).count()) : "none"));
+            " last_pulse_utc=" + (status.hasSuccess ? status.lastSuccessUtc : "unknown") +
+            " last_pulse_age_ms=" + (status.hasSuccess ? std::to_string(tick - status.lastSuccessTickMs) : "unknown") +
+            " " + ActivitySummary(audio, tick));
         g_lastHeartbeat = now;
     }
     if (status.hasNext && g_config.enabled) {
@@ -612,6 +717,26 @@ void UpdateStatus() {
     const std::wstring tip = L"KRK Wakeup — " + message;
     wcsncpy_s(data.szTip, tip.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_MODIFY, &data);
+}
+
+void ToggleDiagnostics() {
+    const bool enabled = !g_config.diagnostics;
+    if (!WritePrivateProfileStringW(L"Settings", L"Diagnostics", enabled ? L"1" : L"0", g_settingsPath.c_str())) {
+        ShowInputError(L"No se pudo guardar la opción de diagnóstico.");
+        return;
+    }
+    if (!SetDiagnosticsEnabled(enabled)) {
+        WritePrivateProfileStringW(L"Settings", L"Diagnostics", g_config.diagnostics ? L"1" : L"0", g_settingsPath.c_str());
+        ShowInputError(L"No se pudo crear el registro de diagnóstico.");
+        return;
+    }
+    g_config.diagnostics = enabled;
+    if (enabled) {
+        LogEvent("instance_snapshot", ConfigSummary(g_config));
+        g_lastActivityReport = 0;
+        g_lastHeartbeat = Clock::now() - std::chrono::seconds(30);
+        UpdateStatus();
+    }
 }
 
 void ToggleEnabled() {
@@ -635,7 +760,9 @@ void ShowTrayMenu() {
                 g_config.enabled ? L"Pausar" : L"Activar");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuTone, L"Probar tono");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuTest, L"Probar pulso");
-    AppendMenuW(menu, MF_OWNERDRAW, kMenuLog, L"Abrir registro");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuDiagnostics,
+                g_config.diagnostics ? L"Desactivar diagnóstico" : L"Activar diagnóstico");
+    AppendMenuW(menu, MF_OWNERDRAW, kMenuLog, L"Abrir registros");
     AppendMenuW(menu, MF_OWNERDRAW, kMenuExit, L"Salir");
     POINT point;
     GetCursorPos(&point);
@@ -702,17 +829,17 @@ void PaintWindow(HWND window) {
     if (g_expanded) {
         HPEN line = CreatePen(PS_SOLID, std::max(1, Scale(1)), hairline);
         const HGDIOBJ oldPen = SelectObject(dc, line);
-        MoveToEx(dc, Scale(18), Scale(390), nullptr);
-        LineTo(dc, Scale(402), Scale(390));
+        MoveToEx(dc, Scale(18), Scale(410), nullptr);
+        LineTo(dc, Scale(402), Scale(410));
         SelectObject(dc, oldPen);
         DeleteObject(line);
-        label(L"AJUSTES DE SEÑAL", {18, 400, 402, 422}, g_fontSmall, muted);
-        label(L"Reposo estimado (mm:ss)", {18, 430, 285, 462}, g_fontBody, text);
-        label(L"Duración del pulso (ms)", {18, 470, 285, 502}, g_fontBody, text);
-        label(L"Frecuencia (Hz)", {18, 510, 285, 542}, g_fontBody, text);
-        label(L"Nivel digital (%)", {18, 550, 285, 582}, g_fontBody, text);
-        label(L"Iniciar con Windows", {18, 590, 300, 622}, g_fontBody, text);
-        for (int top : {430, 470, 510, 550})
+        label(L"AJUSTES DE SEÑAL", {18, 420, 402, 440}, g_fontSmall, muted);
+        label(L"Reposo estimado (mm:ss)", {18, 446, 285, 478}, g_fontBody, text);
+        label(L"Duración del pulso (ms)", {18, 484, 285, 516}, g_fontBody, text);
+        label(L"Frecuencia (Hz)", {18, 522, 285, 554}, g_fontBody, text);
+        label(L"Nivel digital (%)", {18, 560, 285, 592}, g_fontBody, text);
+        label(L"Iniciar con Windows", {18, 600, 300, 632}, g_fontBody, text);
+        for (int top : {446, 484, 522, 560})
             panel({293, top, 402, top + 32}, RGB(19, 22, 23), 9);
     }
     BitBlt(screen, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
@@ -839,7 +966,7 @@ void AddControl(const wchar_t* klass, const wchar_t* title, DWORD style,
                                    Scale(x), Scale(y), Scale(width), Scale(height), g_window,
                                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                    GetModuleHandleW(nullptr), nullptr);
-    SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontBody), TRUE);
+    SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(id == kActivity ? g_fontSmall : g_fontBody), TRUE);
 }
 
 void BuildWindow() {
@@ -863,15 +990,17 @@ void BuildWindow() {
     AddControl(L"BUTTON", L"Más ajustes", BS_OWNERDRAW | WS_TABSTOP,
                216, 330, 186, 38, kAdvanced);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 435, 94, 22, kIdle);
+               301, 451, 94, 22, kIdle);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 475, 94, 22, kDuration);
+               301, 489, 94, 22, kDuration);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 515, 94, 22, kFrequency);
+               301, 527, 94, 22, kFrequency);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
-               301, 555, 94, 22, kLevel);
+               301, 565, 94, 22, kLevel);
     AddControl(L"BUTTON", L"No", BS_OWNERDRAW | WS_TABSTOP,
-               342, 590, 60, 32, kStartup);
+               342, 600, 60, 32, kStartup);
+    AddControl(L"STATIC", L"Audio observado: esperando lectura", SS_LEFT | SS_END_ELLIPSIS,
+               18, 380, 384, 20, kActivity);
     UpdateFields();
     SetExpanded(false);
 }
@@ -889,6 +1018,11 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         return 0;
     case WM_CTLCOLORSTATIC: {
         HDC dc = reinterpret_cast<HDC>(wparam);
+        if (GetDlgCtrlID(reinterpret_cast<HWND>(lparam)) == kActivity) {
+            SetTextColor(dc, RGB(145, 151, 153));
+            SetBkColor(dc, RGB(0, 0, 0));
+            return reinterpret_cast<LRESULT>(g_brushBackground);
+        }
         SetTextColor(dc, RGB(242, 243, 240));
         SetBkColor(dc, RGB(17, 20, 21));
         return reinterpret_cast<LRESULT>(g_brushPanel);
@@ -903,7 +1037,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
     case WM_MEASUREITEM: {
         auto* item = reinterpret_cast<MEASUREITEMSTRUCT*>(lparam);
         if (item && item->CtlType == ODT_MENU) {
-            item->itemWidth = Scale(180);
+            item->itemWidth = Scale(230);
             item->itemHeight = Scale(34);
             return TRUE;
         }
@@ -935,9 +1069,27 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         return 0;
     }
     case WM_POWERBROADCAST:
-        if (wparam == PBT_APMSUSPEND) LogEvent("power_suspend");
+        if (wparam == PBT_APMSUSPEND) {
+            LogEvent("power_suspend");
+            g_systemSuspended = true;
+            if (g_worker) g_worker->Suspend();
+            if (g_activity) g_activity->Configure(g_config.endpointId, false);
+        }
+        if (wparam == PBT_POWERSETTINGCHANGE && lparam) {
+            const auto* setting = reinterpret_cast<const POWERBROADCAST_SETTING*>(lparam);
+            if (IsEqualGUID(setting->PowerSetting, GUID_CONSOLE_DISPLAY_STATE) && setting->DataLength == sizeof(DWORD)) {
+                DWORD state = 0;
+                std::memcpy(&state, setting->Data, sizeof(state));
+                LogEvent("display_state", "value=" + std::to_string(state));
+            }
+        }
         if (wparam == PBT_APMRESUMEAUTOMATIC) {
             LogEvent("power_resume");
+            g_systemSuspended = false;
+            if (g_activity) {
+                g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty());
+                g_activity->Resume();
+            }
             if (g_worker) g_worker->Resume();
         }
         return TRUE;
@@ -949,6 +1101,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         g_window = window;
         BuildWindow();
         AddTrayIcon();
+        g_displayNotification = RegisterPowerSettingNotification(window, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
         g_sessionNotifications = WTSRegisterSessionNotification(window, NOTIFY_FOR_THIS_SESSION) != FALSE;
         if (!g_sessionNotifications) LogEvent("session_notifications_unavailable",
                                              "error=" + std::to_string(GetLastError()));
@@ -979,9 +1132,11 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             if (g_config.endpointId.empty()) ShowSettings();
             else g_worker->Test(PulseWorker::TestKind::Tone);
             return 0;
+        case kMenuDiagnostics: ToggleDiagnostics(); return 0;
         case kMenuLog: {
-            const std::wstring argument = L"\"" + DiagnosticsPath() + L"\"";
-            ShellExecuteW(window, L"open", L"notepad.exe", argument.c_str(), nullptr, SW_SHOWNORMAL);
+            const auto folder = DiagnosticsDirectory();
+            CreateDirectoryW(folder.c_str(), nullptr);
+            ShellExecuteW(window, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
             return 0;
         }
         case kMenuExit: DestroyWindow(window); return 0;
@@ -1002,6 +1157,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         return 0;
     case WM_DESTROY:
         if (g_sessionNotifications) WTSUnRegisterSessionNotification(window);
+        if (g_displayNotification) UnregisterPowerSettingNotification(g_displayNotification);
         LogEvent("app_exit");
         KillTimer(window, kTimerId);
         if (g_worker) g_worker->Stop();
@@ -1013,7 +1169,9 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
 }
 }  // namespace
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
+    int helperExit = 0;
+    if (RunAudioHelperIfRequested(commandLine, helperExit)) return helperExit;
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\KRKWakeupSingleInstance");
     if (!instanceMutex || GetLastError() == ERROR_ALREADY_EXISTS) {
         MessageBoxW(nullptr, L"KRK Wakeup ya está en ejecución.", L"KRK Wakeup",
@@ -1033,15 +1191,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         CloseHandle(instanceMutex);
         return 1;
     }
-    InitDiagnostics(g_settingsPath);
-    LogEvent("app_start", "version=" KRK_WAKEUP_VERSION);
     LoadConfig();
+    InitDiagnostics(g_settingsPath);
+    if (!SetDiagnosticsEnabled(g_config.diagnostics)) g_config.diagnostics = false;
+    LogEvent("app_start", "version=" KRK_WAKEUP_VERSION);
     if (g_config.startup) SetStartup(true);
     g_dpi = GetDpiForSystem();
     CreateUiFonts();
     g_brushBackground = CreateSolidBrush(RGB(0, 0, 0));
     g_brushPanel = CreateSolidBrush(RGB(17, 20, 21));
     g_brushInput = CreateSolidBrush(RGB(19, 22, 23));
+    g_activity = std::make_unique<AudioActivityMonitor>();
+    g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty());
     g_worker = std::make_unique<PulseWorker>(g_config);
     g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     g_icon = LoadIconW(instance, MAKEINTRESOURCEW(101));
@@ -1055,6 +1216,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     klass.hbrBackground = g_brushBackground;
     if (!RegisterClassW(&klass)) {
         g_worker.reset();
+        g_activity.reset();
         CoUninitialize();
         CloseHandle(instanceMutex);
         return 1;
@@ -1072,6 +1234,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
                                   nullptr, nullptr, instance, nullptr);
     if (!window) {
         g_worker.reset();
+        g_activity.reset();
         CoUninitialize();
         CloseHandle(instanceMutex);
         return 1;
@@ -1093,6 +1256,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         }
     }
     g_worker.reset();
+    g_activity.reset();
     CoUninitialize();
     CloseHandle(instanceMutex);
     return static_cast<int>(message.wParam);

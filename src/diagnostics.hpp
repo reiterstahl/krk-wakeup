@@ -3,5 +3,8 @@
 #include <string>
 
 void InitDiagnostics(const std::wstring& settingsPath);
+bool SetDiagnosticsEnabled(bool enabled);
+bool DiagnosticsEnabled();
 void LogEvent(const char* event, const std::string& details = {});
-const std::wstring& DiagnosticsPath();
+std::wstring DiagnosticsPath();
+std::wstring DiagnosticsDirectory();
