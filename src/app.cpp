@@ -658,10 +658,12 @@ std::string ActivitySummary(const AudioActivitySnapshot& audio, uint64_t tick) {
     const char* coverage = audio.coverage == AudioMeterCoverage::SharedAndExclusive ? "shared_and_exclusive"
                          : audio.coverage == AudioMeterCoverage::SharedModeOnly ? "shared_only" : "unknown";
     return std::string("state=") + ActivityStateName(audio.state) + " stage=" + audio.stage +
-        " hr=" + error + " coverage=" + coverage +
+        " hr=" + error + " coverage=" + coverage + " sample_peak=" + std::to_string(audio.peak) +
         " last_audio_utc=" + (audio.hasLastActivity ? audio.lastActivityUtc : "unknown") +
         " last_audio_age_ms=" + (audio.hasLastActivity ? std::to_string(tick - audio.lastActivityTickMs) : "unknown") +
         " poll_age_ms=" + (audio.lastPollTickMs ? std::to_string(tick - audio.lastPollTickMs) : "unknown") +
+        " progress_age_ms=" + (audio.lastProgressTickMs ? std::to_string(tick - audio.lastProgressTickMs) : "unknown") +
+        " attempt_age_ms=" + (audio.attemptStartedTickMs ? std::to_string(tick - audio.attemptStartedTickMs) : "unknown") +
         " endpoint_muted=" + (audio.endpointMuteKnown ? std::to_string(audio.endpointMuted) : "unknown") +
         " endpoint_volume_pct=" + (audio.endpointVolumeKnown ? std::to_string(audio.endpointVolume * 100) : "unknown");
 }
@@ -999,7 +1001,7 @@ void BuildWindow() {
                301, 565, 94, 22, kLevel);
     AddControl(L"BUTTON", L"No", BS_OWNERDRAW | WS_TABSTOP,
                342, 600, 60, 32, kStartup);
-    AddControl(L"STATIC", L"Audio observado: esperando lectura", SS_LEFT | SS_END_ELLIPSIS,
+    AddControl(L"STATIC", L"Audio observado: esperando lectura", SS_LEFT | SS_ENDELLIPSIS,
                18, 380, 384, 20, kActivity);
     UpdateFields();
     SetExpanded(false);
