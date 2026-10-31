@@ -18,7 +18,7 @@
 
 **KRK Wakeup** is a small Windows utility that sends a short audio signal to an output you choose. It was created to prevent KRK GoAux 3 speakers connected over RCA to an SMSL SU-1 from entering standby during long pauses.
 
-> **Status:** v0.2.0 is released. Intermittent standby at 15–18 minute intervals remains under investigation while the screen is off and the PC stays awake. This version adds opt-in diagnostics, selected-output activity observations, and recovery from blocked audio calls. Extended testing with physical GoAux speakers is still needed.
+> **Status:** v0.3.0 is released. Screen-off mode caps the interval at five minutes and useful observed audio postpones automatic pulses on the selected output. The physical cause of standby at 15–18 minutes remains unconfirmed; this new policy still needs testing on the actual speakers.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: a short signal to keep your speakers ready" width="100%">
@@ -41,6 +41,18 @@
 
 These are captures of the actual Windows interface with no audio output selected. Sharpness at 4K depends on Windows DPI scaling; a physical 4K monitor check is still pending.
 
+## Screen and audio policy
+
+- **Screen on or dimmed:** uses **Intervalo normal**, the interval configured in the window. Existing settings are retained.
+- **Screen off:** uses the shorter of the normal interval and **five minutes**. If the previous pulse is already overdue under that limit, the schedule is reconsidered immediately.
+- **Useful audio on the selected DAC:** postpones the next pulse until that interval has elapsed since the latest sufficiently strong observation. The app can stay open while listening to music.
+
+Deferral requires a fresh reading, known endpoint volume/mute, and a peak at least as strong as the configured digital pulse level. Small noise, a stalled meter, and unknown outputs do not suppress pulses. The app’s own pulses and their meter tail do not extend the next interval. Manual **Probar tono** and **Probar pulso** remain available, including while paused or other audio is playing.
+
+The app uses [Windows session display notifications](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids). An unknown screen state also uses the five-minute cap. When the screen turns on, the normal interval is restored from the previous pulse or useful audio, without starting a new full wait. Locking the session alone does not activate screen-off mode.
+
+The utility aims to **prevent** standby; it is not considered able to turn the KRK speakers back on after they shut down.
+
 ## Why it exists
 
 GoAux speakers can enter standby after receiving no signal for some time. In this setup, standby was initially estimated at **about 15 minutes**. Failure with a 20-minute pulse interval shows that interval leaves insufficient margin, but does not establish the exact standby time. The [official KRK manual](https://cdn.shopify.com/s/files/1/0566/0809/6342/files/KRK-GoAux-Monitor-System-Product-User-Manual.pdf?v=1705178896) explains how to control standby manually, but does not specify the automatic standby interval or the minimum signal level that resets it. Both need to be checked with the actual speakers.
@@ -51,7 +63,7 @@ The idea is simple: while the utility is active, it sends a discreet pulse befor
 
 - A notification area icon next to the Windows clock and a compact OLED black window. Audio tests, main actions, and advanced settings are grouped separately. Fonts and controls scale with each monitor’s DPI for sharp rendering on high-resolution displays; visual validation on a real 4K monitor is still pending.
 - A fixed audio output: changing the Windows default output to Bluetooth headphones does not change where the pulse goes.
-- A three-second audible test tone (440 Hz at 5% digital level), a test of the configured pulse, pause, an adjustable interval, and a countdown to the next pulse.
+- A three-second audible test tone (440 Hz at 5% digital level), a test of the configured pulse, pause, a configurable normal interval, and an automatic five-minute screen-off mode.
 - Additional settings for estimated standby time, pulse duration, frequency, and digital level.
 - Optional startup when the current user signs in to Windows, without an installer or administrator rights.
 - Retry audio failures every 5 seconds and request an immediate pulse when Windows resumes; pulses are never redirected automatically to another output.
@@ -63,17 +75,17 @@ The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → K
 
 ## Download and test
 
-1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.2.0-windows-x64.zip`** from **v0.2.0**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
-2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place. Run v0.2.0 manually once: if startup was enabled, it will update the registered path to this executable.
+1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.3.0-windows-x64.zip`** from **v0.3.0**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place. Run v0.3.0 manually once: if startup was enabled, it will update the registered path to this executable.
 3. Open the app and select the playback output corresponding to the **SMSL SU-1**. You can compare its name with **Settings → System → Sound** in Windows.
 4. Set the GoAux speakers to a comfortable volume, then click **Probar tono** (Test tone). It plays for three seconds at 440 Hz and 5% digital level only through the selected output, even if the app is paused. Confirm that you hear it on the GoAux and nowhere else. Next, click **Probar pulso** (Test pulse): it uses the configured automatic signal, initially **440 Hz**, **1000 ms**, and **1%** digital level. Change these values under **Más ajustes** (More settings) if the signal is annoying or fails to prevent standby.
 5. Save your settings. Switch the Windows default output to Bluetooth headphones and confirm the test still plays only through the DAC. Then leave the GoAux without other audio for longer than their usual standby time and check whether they remain active.
 
-Time fields use `mm:ss`. **Reposo estimado** (Estimated standby) is a calibration reference; it does not change the KRK speakers' internal timer. **Intervalo entre pulsos** (Pulse interval) controls when the app sends audio. The app warns you if the interval equals or exceeds the estimated standby time.
+Time fields use `mm:ss`. **Reposo estimado** (Estimated standby) is a calibration reference; it does not change the KRK speakers' internal timer. **Intervalo normal** controls the base deadline while the screen is on; screen-off mode caps it at five minutes. Useful audio may postpone the pulse. The app warns you if the interval equals or exceeds the estimated standby time.
 
 **Frecuencia** (Frequency) accepts **10 to 15000 Hz**. To try a low frequency, use **Probar pulso** (Test pulse), which plays your configured settings. **Probar tono** (Test tone) remains the fixed audible test at 440 Hz. Low frequencies are experimental: their effectiveness at preventing standby still needs to be checked on the GoAux.
 
-A **20-minute** interval did not prevent standby in the tested GoAux; **18 minutes** initially worked, but intermittent standby later occurred at both 18 and 15 minutes while the screen was off and the PC stayed awake. A single missed pulse at that interval can leave about 36 minutes without an effective signal. For now, the default **5-minute** interval leaves more margin relative to the estimated 15-minute standby time. If they go to sleep even with a short interval, use **Probar tono** (Test tone) to confirm the audio route, then change pulse level and duration one at a time. KRK does not publish the GoAux detection threshold in its manual. Also check that neither Windows nor the SMSL SU-1 is muted.
+A **20-minute** interval did not prevent standby in the tested GoAux; **18 minutes** initially worked, but intermittent standby later occurred at both 18 and 15 minutes while the screen was off and the PC stayed awake. A single missed pulse at that interval can leave about 36 minutes without an effective signal. The new policy retains your normal interval and automatically applies a **five-minute** cap while the screen is off. If they go to sleep even with a short interval, use **Probar tono** (Test tone) to confirm the audio route, then change pulse level and duration one at a time. KRK does not publish the GoAux detection threshold in its manual. Also check that neither Windows nor the SMSL SU-1 is muted.
 
 **Locking Windows with Win + L** leaves the utility running while the computer remains awake. If Windows enters sleep or hibernation, desktop processes pause and the app requests a new pulse on resume if it is enabled and has a selected output. See [Microsoft's sleep documentation](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
 
@@ -90,13 +102,15 @@ Right-click the notification area icon and choose **Activar diagnóstico** (Enab
 | `last_audio_utc`, `last_audio_age_ms` | Last observed signal on that output, including other apps. |
 | `poll_age_ms`, `progress_age_ms`, `attempt_age_ms` | Whether the observer was responding, reconnecting, or no longer obtaining readings. |
 | `display_state`, `session_lock`, `power_suspend`, `power_resume` | Screen, session lock, and actual sleep/resume events. |
-| `heartbeat` | A 30-second summary of observed audio, next pulse, and worker state. |
+| `screen_policy`, `effective_interval_s` | Screen state and the interval currently being applied. |
+| `pulse_deferred`, `qualifying_audio_utc` | Deferral due to useful audio and the last qualifying observation. |
+| `heartbeat` | A 30-second summary of audio, screen state, effective interval, and worker state. |
 
-The window shows **Audio observado hace mm:ss** (Audio observed mm:ss ago). The saved output’s meter is sampled every 100 ms without opening a playback stream or recording audio. History starts when the app opens and resets when the selected output changes. Observations do not alter the pulse interval.
+The window shows **Audio observado hace mm:ss** (Audio observed mm:ss ago). The saved output’s meter is sampled every 100 ms without opening a playback stream or recording audio. History starts when the app opens and resets when the selected output changes. Sufficiently strong, fresh observations can postpone automatic pulses.
 
 There are limits: the [Windows meter](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudiometerinformation) operates before endpoint volume/mute, and software meters cannot observe exclusive streams. Each [reading covers one device period](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nf-endpointvolume-iaudiometerinformation-getpeakvalue), so sampling can miss brief sounds. Unknown or stale observations are not reported as confirmed silence. `pulse_ok` also cannot prove analog output over RCA or that the speakers reset their timer.
 
-Reports store timing, state, and level metadata, not audio, computer names, executable paths, or device identifiers. For this trial, use a **5–10 minute** interval. If standby recurs, keep that run’s report and note the approximate time.
+Reports store timing, state, and level metadata, not audio, computer names, executable paths, or device identifiers. For this trial, keep your normal interval and enable diagnostics: the report will show the five-minute cap when the screen turns off. If standby recurs, keep that run’s report and note the approximate time.
 
 ## Reliability review
 
@@ -127,7 +141,7 @@ cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-The executable will be at `build\Release\krk-wakeup.exe`. Every change to `main` triggers a build, startup smoke test, startup registration repair test, audio drain/timing tests, blocked-renderer isolation tests, opt-in diagnostics tests, and a recovery check with simulated lock/resume notifications in GitHub Actions. These tests do not measure physical standby behavior; the [validation plan](docs/PLAN.md) describes that check (currently in Spanish).
+The executable will be at `build\Release\krk-wakeup.exe`. Every change to `main` triggers a build, startup smoke test, startup registration repair test, audio drain/timing and screen/audio policy tests, blocked-renderer isolation tests, opt-in diagnostics tests, and a recovery check with simulated lock/resume notifications in GitHub Actions. These tests do not measure physical standby behavior; the [validation plan](docs/PLAN.md) describes that check (currently in Spanish).
 
 ## Project
 

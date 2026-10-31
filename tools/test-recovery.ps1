@@ -86,7 +86,9 @@ Diagnostics=1
     Send-AppMessage 0x0218 4 # WM_POWERBROADCAST / PBT_APMSUSPEND
     Send-AppMessage 0x0218 18 # PBT_APMRESUMEAUTOMATIC
     Wait-Until {
-        ([regex]::Matches((Read-Log), 'event=pulse_start\b')).Count -gt $startsBeforeResume
+        $text = Read-Log
+        ([regex]::Matches($text, 'event=pulse_start\b')).Count -gt $startsBeforeResume -and
+        $text.LastIndexOf('event=pulse_error') -gt $text.LastIndexOf('event=pulse_start')
     } 'immediate audio retry on resume' 4000
     if ((Read-Log) -notmatch 'event=recovery_requested reason=resume') { throw 'Resume did not rearm the worker' }
     # A failed endpoint must keep retrying while the window is hidden and the

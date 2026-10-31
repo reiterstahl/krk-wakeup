@@ -211,7 +211,7 @@ public:
         if (thread_.joinable()) thread_.join();
     }
 private:
-    unsigned Interval() const { return PulseSchedule::EffectiveInterval(config_.intervalSeconds, displayState_ == 0); }
+    unsigned Interval() const { return PulseSchedule::EffectiveInterval(config_.intervalSeconds, displayState_ != 1 && displayState_ != 2); }
 
     void Loop() {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -753,6 +753,7 @@ void UpdateStatus() {
         if (audio.endpointMuteKnown && audio.endpointMuted) activity += L" · silenciado";
     } else activity = L"Audio observado: aún sin señal detectada";
     if (status.displayState == 0) activity += L" · apagada: " + FormatTime(status.effectiveIntervalSeconds);
+    else if (status.displayState < 0) activity += L" · pantalla sin datos: " + FormatTime(status.effectiveIntervalSeconds);
     SetWindowTextW(GetDlgItem(g_window, kActivity), activity.c_str());
     if (audio.state != g_lastActivityState || tick - g_lastActivityReport >= 10000) {
         LogEvent("endpoint_observation", ActivitySummary(audio, tick));
