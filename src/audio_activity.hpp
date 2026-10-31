@@ -30,6 +30,10 @@ struct AudioActivitySnapshot {
     // GetTickCount64 includes time spent asleep. UTC is for human-readable logs.
     uint64_t lastActivityTickMs = 0;
     std::string lastActivityUtc;
+    bool hasQualifyingActivity = false;
+    uint64_t lastQualifyingActivityTickMs = 0;
+    std::string lastQualifyingActivityUtc;
+    unsigned qualifyingLevelPercent = 1;
     // Progress lets callers identify a blocked activation/poll independently of
     // the last audio observation. Zero means no connection attempt yet.
     uint64_t attemptStartedTickMs = 0;
@@ -55,7 +59,7 @@ public:
 
     // Switching endpoint clears its history. Disabling stops endpoint queries;
     // history for the same endpoint remains available until the process exits.
-    void Configure(const std::wstring& endpointId, bool enabled);
+    void Configure(const std::wstring& endpointId, bool enabled, unsigned minimumLevelPercent = 1);
     // Recreate COM endpoint interfaces after resume; retain the last observation.
     void Resume();
     // Samples older than five seconds become Unknown rather than remaining

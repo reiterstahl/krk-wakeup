@@ -1,10 +1,12 @@
 #include "audio_activity.hpp"
+#include "pulse_schedule.hpp"
 
 #include <endpointvolume.h>
 #include <mmdeviceapi.h>
 #include <wrl/client.h>
 
 #include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
@@ -105,6 +107,7 @@ struct AudioActivityMonitor::Impl {
         bool stop = false;
         bool finished = false;
         bool enabled = false;
+        unsigned minimumLevelPercent = 1;
         uint64_t revision = 0;
         std::wstring endpointId;
         AudioActivitySnapshot snapshot;
@@ -191,6 +194,17 @@ struct AudioActivityMonitor::Impl {
                     {
                         std::lock_guard<std::mutex> lock(mutex);
                         if (stop || revision != current) break;
+                        sample.hasQualifyingActivity = snapshot.hasQualifyingActivity;
+                        sample.lastQualifyingActivityTickMs = snapshot.lastQualifyingActivityTickMs;
+                        sample.lastQualifyingActivityUtc = snapshot.lastQualifyingActivityUtc;
+                        sample.qualifyingLevelPercent = minimumLevelPercent;
+                        if (sample.endpointMuteKnown && !sample.endpointMuted &&
+                            sample.endpointVolumeKnown && sample.endpointVolume > 0.0f &&
+                            PulseSchedule::QualifyingPeak(sample.peak, minimumLevelPercent)) {
+                            sample.hasQualifyingActivity = true;
+                            sample.lastQualifyingActivityTickMs = sample.lastPollTickMs;
+                            sample.lastQualifyingActivityUtc = sample.lastPollUtc;
+                        }
                         sample.hasLastActivity = snapshot.hasLastActivity;
                         sample.lastActivityTickMs = snapshot.lastActivityTickMs;
                         sample.lastActivityUtc = snapshot.lastActivityUtc;
@@ -251,12 +265,21 @@ struct AudioActivityMonitor::Impl {
 AudioActivityMonitor::AudioActivityMonitor() : impl_(std::make_unique<Impl>()) {}
 AudioActivityMonitor::~AudioActivityMonitor() = default;
 
-void AudioActivityMonitor::Configure(const std::wstring& endpointId, bool enabled) {
+void AudioActivityMonitor::Configure(const std::wstring& endpointId, bool enabled, unsigned minimumLevelPercent) {
     auto& state = *impl_->state;
     {
         std::lock_guard<std::mutex> lock(state.mutex);
-        if (state.endpointId == endpointId && state.enabled == enabled) return;
+        minimumLevelPercent = std::clamp(minimumLevelPercent, 1u, 10u);
+        if (state.endpointId == endpointId && state.enabled == enabled &&
+            state.minimumLevelPercent == minimumLevelPercent) return;
         if (state.endpointId != endpointId) state.snapshot = {};
+        if (state.minimumLevelPercent != minimumLevelPercent) {
+            state.snapshot.hasQualifyingActivity = false;
+            state.snapshot.lastQualifyingActivityTickMs = 0;
+            state.snapshot.lastQualifyingActivityUtc.clear();
+        }
+        state.minimumLevelPercent = minimumLevelPercent;
+        state.snapshot.qualifyingLevelPercent = minimumLevelPercent;
         state.endpointId = endpointId;
         state.enabled = enabled;
         state.Invalidate();

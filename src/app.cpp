@@ -114,12 +114,15 @@ struct Status {
     uint64_t lastSuccessTickMs = 0;
     std::string lastSuccessUtc;
     bool suspended = false;
+    int displayState = -1;
+    unsigned effectiveIntervalSeconds = 300;
 };
 
 class PulseWorker {
 public:
     enum class TestKind { None, Pulse, Tone };
-    explicit PulseWorker(Config config) : config_(std::move(config)), next_(Clock::now()) {
+    PulseWorker(Config config, AudioActivityMonitor& activity)
+        : activity_(activity), config_(std::move(config)), next_(Clock::now()) {
         LogEvent("worker_start", ConfigSummary(config_));
         thread_ = std::thread([this] { Loop(); });
     }
@@ -132,6 +135,7 @@ public:
         const bool activate = (!config_.enabled || config_.endpointId.empty() ||
                                config_.endpointId != config.endpointId) &&
                               config.enabled && !config.endpointId.empty();
+        const bool intervalChanged = config_.intervalSeconds != config.intervalSeconds;
         const bool endpointChanged = config_.endpointId != config.endpointId;
         const bool renderChanged = endpointChanged || config_.enabled != config.enabled ||
             config_.durationMs != config.durationMs || config_.frequencyHz != config.frequencyHz ||
@@ -144,11 +148,24 @@ public:
         if (renderChanged) ++renderGeneration_;
         config_ = config;
         ++generation_;
-        next_ = PulseSchedule::Reconfigure(next_, Clock::now(), config.intervalSeconds,
-                                            activate, manualTestFollows);
+        next_ = PulseSchedule::Reconfigure(next_, Clock::now(), Interval(), activate, manualTestFollows);
+        if (activate) forcePulse_ = true;
+        if (intervalChanged && !manualTestFollows) next_ = Clock::now();
         status_ = config.endpointId.empty() ? L"Selecciona una salida de audio."
                   : config.enabled ? L"Activo." : L"Pausado.";
         LogEvent("configured", ConfigSummary(config));
+        condition_.notify_one();
+    }
+    void SetDisplayState(unsigned state) {
+        if (state > 2) return;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (displayState_ == static_cast<int>(state)) return;
+        displayState_ = static_cast<int>(state);
+        ++generation_;
+        next_ = Clock::now();
+        LogEvent("screen_policy", "display_state=" + std::to_string(displayState_) +
+            " normal_interval_s=" + std::to_string(config_.intervalSeconds) +
+            " effective_interval_s=" + std::to_string(Interval()));
         condition_.notify_one();
     }
     void Suspend() {
@@ -165,6 +182,7 @@ public:
         ++renderGeneration_;
         if (config_.enabled && !config_.endpointId.empty()) {
             next_ = Clock::now();
+            forcePulse_ = true;
             status_ = L"Recuperando audio tras reanudar…";
             LogEvent("recovery_requested", "reason=resume");
         }
@@ -179,7 +197,7 @@ public:
     Status Snapshot() {
         std::lock_guard<std::mutex> lock(mutex_);
         return {status_, next_, config_.enabled && !config_.endpointId.empty() && !busy_ && !suspended_,
-                busy_, started_, hasSuccess_, lastSuccessTickMs_, lastSuccessUtc_, suspended_};
+                busy_, started_, hasSuccess_, lastSuccessTickMs_, lastSuccessUtc_, suspended_, displayState_, Interval()};
     }
     void Stop() {
         {
@@ -191,6 +209,8 @@ public:
         if (thread_.joinable()) thread_.join();
     }
 private:
+    unsigned Interval() const { return PulseSchedule::EffectiveInterval(config_.intervalSeconds, displayState_ == 0); }
+
     void Loop() {
         std::unique_lock<std::mutex> lock(mutex_);
         while (!stopping_) {
@@ -216,6 +236,29 @@ private:
                 continue;
             }
             if (stopping_) break;
+            if (testPending_ == TestKind::None) {
+                const auto now = Clock::now();
+                const auto baseline = !hasSuccess_ || forcePulse_ || retryPending_ ? next_
+                    : PulseSchedule::AfterSuccess(lastPulseStarted_, lastPulseCompleted_, Interval());
+                const auto audio = activity_.Snapshot();
+                const bool reliable = (audio.state == AudioActivityState::Active || audio.state == AudioActivityState::Quiet) &&
+                    audio.coverage != AudioMeterCoverage::Unknown &&
+                    audio.endpointMuteKnown && !audio.endpointMuted && audio.endpointVolumeKnown && audio.endpointVolume > 0.0f;
+                const auto decision = PulseSchedule::AutomaticDue(now, baseline, Interval(), GetTickCount64(),
+                    reliable, audio.hasQualifyingActivity, audio.lastQualifyingActivityTickMs, audio.lastPollTickMs,
+                    hasSuccess_, lastSuccessTickMs_);
+                if (decision.due > now) {
+                    next_ = decision.due;
+                    if (decision.deferredByAudio) {
+                        forcePulse_ = false;
+                        retryPending_ = false;
+                        status_ = L"Hay audio; pulso aplazado.";
+                        LogEvent("pulse_deferred", "reason=observed_audio effective_interval_s=" + std::to_string(Interval()) +
+                            " next_in_ms=" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(next_ - now).count()));
+                    }
+                    continue;
+                }
+            }
             const TestKind test = testPending_;
             testPending_ = TestKind::None;
             const Config current = config_;
@@ -232,7 +275,8 @@ private:
                 " duration_ms=" + std::to_string(test == TestKind::Tone ? 3000 : current.durationMs) +
                 " frequency_hz=" + std::to_string(test == TestKind::Tone ? 440 : current.frequencyHz) +
                 " level_pct=" + std::to_string(test == TestKind::Tone ? 5 : current.levelPercent) +
-                " interval_s=" + std::to_string(current.intervalSeconds));
+                " interval_s=" + std::to_string(current.intervalSeconds) +
+                " effective_interval_s=" + std::to_string(Interval()) + " display_state=" + std::to_string(displayState_));
             status_ = test == TestKind::Tone ? L"Reproduciendo tono de prueba…"
                     : test == TestKind::Pulse ? L"Enviando pulso de prueba…"
                     : L"Enviando pulso…";
@@ -256,15 +300,20 @@ private:
                 " superseded=" + std::to_string(renderGeneration != renderGeneration_));
             if (stopping_) break;
             if (renderGeneration != renderGeneration_) continue;
+            forcePulse_ = false;
             if (result.success) {
+                retryPending_ = false;
                 hasSuccess_ = true;
+                lastPulseStarted_ = started;
+                lastPulseCompleted_ = completed;
                 lastSuccessTickMs_ = GetTickCount64();
                 lastSuccessUtc_ = UtcNow();
                 status_ = test == TestKind::Tone ? L"Tono de prueba enviado."
                         : test == TestKind::Pulse ? L"Pulso de prueba enviado."
                         : L"Pulso enviado.";
-                next_ = PulseSchedule::AfterSuccess(started, completed, config_.intervalSeconds);
+                next_ = PulseSchedule::AfterSuccess(started, completed, Interval());
             } else {
+                retryPending_ = true;
                 if (result.blockedByVolume) {
                     status_ = L"Audio silenciado en Windows. Reintentando…";
                 } else if (result.unavailable) {
@@ -280,12 +329,15 @@ private:
         }
         LogEvent("worker_stop");
     }
+    AudioActivityMonitor& activity_;
     std::mutex mutex_;
     std::condition_variable condition_;
     std::thread thread_;
     Config config_;
     Clock::time_point next_;
     Clock::time_point started_;
+    Clock::time_point lastPulseStarted_;
+    Clock::time_point lastPulseCompleted_;
     uint64_t lastSuccessTickMs_ = 0;
     std::string lastSuccessUtc_;
     std::wstring status_ = L"Iniciando…";
@@ -295,6 +347,9 @@ private:
     bool suspended_ = false;
     bool busy_ = false;
     bool hasSuccess_ = false;
+    bool forcePulse_ = true;
+    bool retryPending_ = false;
+    int displayState_ = -1;
     TestKind testPending_ = TestKind::None;
 };
 
@@ -613,8 +668,8 @@ bool SaveFromWindow(bool manualTestFollows = false) {
         ShowInputError(L"No se pudo guardar la configuración.");
         return false;
     }
+    if (g_activity) g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty() && !g_systemSuspended, g_config.levelPercent);
     g_worker->Configure(g_config, manualTestFollows);
-    if (g_activity) g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty() && !g_systemSuspended);
     InvalidateRect(g_window, nullptr, FALSE);
     if (candidate.intervalSeconds >= candidate.idleSeconds)
         MessageBoxW(g_window, L"El intervalo iguala o supera el reposo estimado. Los parlantes podrían apagarse antes del siguiente pulso.",
@@ -665,6 +720,8 @@ std::string ActivitySummary(const AudioActivitySnapshot& audio, uint64_t tick) {
         " hr=" + error + " coverage=" + coverage + " sample_peak=" + std::to_string(audio.peak) +
         " last_audio_utc=" + (audio.hasLastActivity ? audio.lastActivityUtc : "unknown") +
         " last_audio_age_ms=" + (audio.hasLastActivity ? std::to_string(tick - audio.lastActivityTickMs) : "unknown") +
+        " qualifying_audio_utc=" + (audio.hasQualifyingActivity ? audio.lastQualifyingActivityUtc : "unknown") +
+        " qualifying_level_pct=" + std::to_string(audio.qualifyingLevelPercent) +
         " poll_age_ms=" + (audio.lastPollTickMs ? std::to_string(tick - audio.lastPollTickMs) : "unknown") +
         " progress_age_ms=" + (audio.lastProgressTickMs ? std::to_string(tick - audio.lastProgressTickMs) : "unknown") +
         " attempt_age_ms=" + (audio.attemptStartedTickMs ? std::to_string(tick - audio.attemptStartedTickMs) : "unknown") +
@@ -687,6 +744,7 @@ void UpdateStatus() {
         activity = L"Audio observado hace " + FormatTime(age);
         if (audio.endpointMuteKnown && audio.endpointMuted) activity += L" · silenciado";
     } else activity = L"Audio observado: aún sin señal detectada";
+    if (status.displayState == 0) activity += L" · apagada: " + FormatTime(status.effectiveIntervalSeconds);
     SetWindowTextW(GetDlgItem(g_window, kActivity), activity.c_str());
     if (audio.state != g_lastActivityState || tick - g_lastActivityReport >= 10000) {
         LogEvent("endpoint_observation", ActivitySummary(audio, tick));
@@ -704,6 +762,8 @@ void UpdateStatus() {
     if (now - g_lastHeartbeat >= std::chrono::seconds(30)) {
         LogEvent("heartbeat", "enabled=" + std::to_string(g_config.enabled) +
             " busy=" + std::to_string(status.busy) + " suspended=" + std::to_string(status.suspended) +
+            " display_state=" + std::to_string(status.displayState) +
+            " effective_interval_s=" + std::to_string(status.effectiveIntervalSeconds) +
             " next_in_s=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(status.next - now).count()) +
             " last_pulse_utc=" + (status.hasSuccess ? status.lastSuccessUtc : "unknown") +
             " last_pulse_age_ms=" + (status.hasSuccess ? std::to_string(tick - status.lastSuccessTickMs) : "unknown") +
@@ -829,7 +889,7 @@ void PaintWindow(HWND window) {
     FillRect(dc, &dotRect, dot);
     DeleteObject(dot);
     label(L"SALIDA DE AUDIO", {18, 153, 402, 173}, g_fontSmall, muted);
-    label(L"INTERVALO ENTRE PULSOS", {18, 218, 284, 251}, g_fontSmall, muted);
+    label(L"INTERVALO NORMAL", {18, 218, 284, 251}, g_fontSmall, muted);
     panel({293, 218, 402, 252}, RGB(19, 22, 23), 9);
     label(L"PRUEBAS DE AUDIO", {18, 255, 402, 276}, g_fontSmall, muted);
 
@@ -1091,21 +1151,22 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             LogEvent("power_suspend");
             g_systemSuspended = true;
             if (g_worker) g_worker->Suspend();
-            if (g_activity) g_activity->Configure(g_config.endpointId, false);
+            if (g_activity) g_activity->Configure(g_config.endpointId, false, g_config.levelPercent);
         }
         if (wparam == PBT_POWERSETTINGCHANGE && lparam) {
             const auto* setting = reinterpret_cast<const POWERBROADCAST_SETTING*>(lparam);
-            if (IsEqualGUID(setting->PowerSetting, GUID_CONSOLE_DISPLAY_STATE) && setting->DataLength == sizeof(DWORD)) {
+            if (IsEqualGUID(setting->PowerSetting, GUID_SESSION_DISPLAY_STATUS) && setting->DataLength == sizeof(DWORD)) {
                 DWORD state = 0;
                 std::memcpy(&state, setting->Data, sizeof(state));
                 LogEvent("display_state", "value=" + std::to_string(state));
+                if (g_worker) g_worker->SetDisplayState(state);
             }
         }
         if (wparam == PBT_APMRESUMEAUTOMATIC) {
             LogEvent("power_resume");
             g_systemSuspended = false;
             if (g_activity) {
-                g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty());
+                g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty(), g_config.levelPercent);
                 g_activity->Resume();
             }
             if (g_worker) g_worker->Resume();
@@ -1119,7 +1180,8 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         g_window = window;
         BuildWindow();
         AddTrayIcon();
-        g_displayNotification = RegisterPowerSettingNotification(window, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
+        g_displayNotification = RegisterPowerSettingNotification(window, &GUID_SESSION_DISPLAY_STATUS, DEVICE_NOTIFY_WINDOW_HANDLE);
+        if (!g_displayNotification) LogEvent("screen_notifications_unavailable", "error=" + std::to_string(GetLastError()));
         g_sessionNotifications = WTSRegisterSessionNotification(window, NOTIFY_FOR_THIS_SESSION) != FALSE;
         if (!g_sessionNotifications) LogEvent("session_notifications_unavailable",
                                              "error=" + std::to_string(GetLastError()));
@@ -1221,8 +1283,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     g_brushPanel = CreateSolidBrush(RGB(17, 20, 21));
     g_brushInput = CreateSolidBrush(RGB(19, 22, 23));
     g_activity = std::make_unique<AudioActivityMonitor>();
-    g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty());
-    g_worker = std::make_unique<PulseWorker>(g_config);
+    g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty(), g_config.levelPercent);
+    g_worker = std::make_unique<PulseWorker>(g_config, *g_activity);
     g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     g_icon = LoadIconW(instance, MAKEINTRESOURCEW(101));
     if (!g_icon) g_icon = LoadIconW(nullptr, IDI_APPLICATION);

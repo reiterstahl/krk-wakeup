@@ -3,6 +3,15 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class RecoveryTestWindow {
+    [StructLayout(LayoutKind.Sequential)] public struct DisplaySetting {
+        public Guid Setting; public uint Length; public uint State;
+    }
+    public static IntPtr AllocateDisplay(uint state) {
+        var value = new DisplaySetting { Setting = new Guid("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5"), Length = 4, State = state };
+        IntPtr pointer = Marshal.AllocHGlobal(Marshal.SizeOf<DisplaySetting>());
+        Marshal.StructureToPtr(value, pointer, false);
+        return pointer;
+    }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string title);
     [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wparam, IntPtr lparam, uint flags, uint timeout, out IntPtr result);
 }
@@ -33,12 +42,17 @@ function Wait-Until([scriptblock] $condition, [string] $description, [int] $time
     }
     throw "Timed out: $description`n$(Read-Log)"
 }
-function Send-AppMessage([uint32] $message, [int] $value) {
+function Send-AppMessage([uint32] $message, [int] $value, [IntPtr] $data = [IntPtr]::Zero) {
     $result = [IntPtr]::Zero
     if ([RecoveryTestWindow]::SendMessageTimeout($script:window, $message, [IntPtr]$value,
-            [IntPtr]::Zero, 2, 2000, [ref]$result) -eq [IntPtr]::Zero) {
+            $data, 2, 2000, [ref]$result) -eq [IntPtr]::Zero) {
         throw "App did not handle message $message"
     }
+}
+function Send-DisplayState([uint32] $state) {
+    $pointer = [RecoveryTestWindow]::AllocateDisplay($state)
+    try { Send-AppMessage 0x0218 0x8013 $pointer }
+    finally { [System.Runtime.InteropServices.Marshal]::FreeHGlobal($pointer) }
 }
 $process = $null
 try {
@@ -61,18 +75,25 @@ Diagnostics=1
         $script:window = [RecoveryTestWindow]::FindWindow('KRKWakeupSettings', 'KRK Wakeup')
         $script:window -ne [IntPtr]::Zero -and (Read-Log) -match 'event=pulse_error'
     } 'initial unavailable-device attempt'
+    foreach ($state in @(0, 2, 1, 0)) {
+        Send-DisplayState $state
+        $effective = if ($state -eq 0) { 300 } else { 1080 }
+        Wait-Until { (Read-Log) -match "event=screen_policy display_state=$state normal_interval_s=1080 effective_interval_s=$effective" } 'screen interval policy'
+    }
     Send-AppMessage 0x02B1 7 # WM_WTSSESSION_CHANGE / WTS_SESSION_LOCK
     Wait-Until { (Read-Log) -match 'event=session_lock' } 'session lock diagnostic'
+    $startsBeforeResume = ([regex]::Matches((Read-Log), 'event=pulse_start\b')).Count
     Send-AppMessage 0x0218 4 # WM_POWERBROADCAST / PBT_APMSUSPEND
     Send-AppMessage 0x0218 18 # PBT_APMRESUMEAUTOMATIC
     Wait-Until {
-        ([regex]::Matches((Read-Log), 'event=pulse_error\b')).Count -ge 2
+        ([regex]::Matches((Read-Log), 'event=pulse_start\b')).Count -gt $startsBeforeResume
     } 'immediate audio retry on resume' 4000
     if ((Read-Log) -notmatch 'event=recovery_requested reason=resume') { throw 'Resume did not rearm the worker' }
     # A failed endpoint must keep retrying while the window is hidden and the
     # session notification says locked, instead of waiting another 18 minutes.
+    $errorsBeforeRetry = ([regex]::Matches((Read-Log), 'event=pulse_error\b')).Count
     Wait-Until {
-        ([regex]::Matches((Read-Log), 'event=pulse_error\b')).Count -ge 3
+        ([regex]::Matches((Read-Log), 'event=pulse_error\b')).Count -gt $errorsBeforeRetry
     } 'retry while hidden after lock notification' 7000
     if ((Read-Log) -notmatch 'event=endpoint_observation state=unavailable') {
         throw 'Missing selected-endpoint monitoring diagnostic'
@@ -91,7 +112,10 @@ Diagnostics=1
     if (([regex]::Matches((Read-Log), 'event=pulse_start\b')).Count -ne $attempts) {
         throw 'Resume unexpectedly enabled a paused worker'
     }
-    Write-Host 'Lock diagnostics, hidden retries, resume recovery, and paused state checks passed.'
+    $manualAttempts = ([regex]::Matches((Read-Log), 'event=pulse_start kind=test\b')).Count
+    Send-AppMessage 0x0111 203 # Manual pulse still works while paused/screen-off
+    Wait-Until { ([regex]::Matches((Read-Log), 'event=pulse_start kind=test\b')).Count -gt $manualAttempts } 'manual pulse bypass'
+    Write-Host 'Screen interval policy, lock diagnostics, hidden retries, resume recovery, pause, and manual pulse checks passed.'
 } finally {
     if ($process) {
         $process.Refresh()
