@@ -144,6 +144,8 @@ public:
             hasSuccess_ = false;
             lastSuccessTickMs_ = 0;
             lastSuccessUtc_.clear();
+            hasOwnAttempt_ = false;
+            lastOwnAttemptEndedTickMs_ = 0;
         }
         if (renderChanged) ++renderGeneration_;
         config_ = config;
@@ -246,7 +248,7 @@ private:
                     audio.endpointMuteKnown && !audio.endpointMuted && audio.endpointVolumeKnown && audio.endpointVolume > 0.0f;
                 const auto decision = PulseSchedule::AutomaticDue(now, baseline, Interval(), GetTickCount64(),
                     reliable, audio.hasQualifyingActivity, audio.lastQualifyingActivityTickMs, audio.lastPollTickMs,
-                    hasSuccess_, lastSuccessTickMs_);
+                    hasOwnAttempt_, lastOwnAttemptEndedTickMs_);
                 if (decision.due > now) {
                     next_ = decision.due;
                     if (decision.deferredByAudio) {
@@ -292,6 +294,10 @@ private:
             lock.lock();
             busy_ = false;
             const auto completed = Clock::now();
+            if (current.endpointId == config_.endpointId) {
+                hasOwnAttempt_ = true;
+                lastOwnAttemptEndedTickMs_ = GetTickCount64();
+            }
             char errorCode[24];
             std::snprintf(errorCode, sizeof(errorCode), "0x%08lX", static_cast<unsigned long>(result.error));
             LogEvent(result.success ? "pulse_ok" : "pulse_error",
@@ -347,6 +353,8 @@ private:
     bool suspended_ = false;
     bool busy_ = false;
     bool hasSuccess_ = false;
+    bool hasOwnAttempt_ = false;
+    uint64_t lastOwnAttemptEndedTickMs_ = 0;
     bool forcePulse_ = true;
     bool retryPending_ = false;
     int displayState_ = -1;

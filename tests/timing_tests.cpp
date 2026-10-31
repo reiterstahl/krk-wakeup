@@ -75,7 +75,7 @@ int main() {
         decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 900,
             1000000, true, true, ownTail, 999950, true, 400000);
         Check(!decision.deferredByAudio && decision.due == nowTime,
-              "Our own pulse and its meter tail must not postpone its next pulse");
+              "Our own successful or failed attempt and its meter tail must not postpone a retry");
     }
     decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
         1000000, true, true, 999900, 997999, true, 400000);

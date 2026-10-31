@@ -27,12 +27,12 @@ struct Decision {
 inline Decision AutomaticDue(Time now, Time baseline, unsigned intervalSeconds,
                               uint64_t nowTick, bool reliableAudio, bool hasActivity,
                               uint64_t activityTick, uint64_t pollTick,
-                              bool hasPulse, uint64_t pulseCompletedTick) {
+                              bool hasOwnAttempt, uint64_t ownAttemptCompletedTick) {
     // Unknown/stale metering must never suppress an automatic pulse. Ignore
     // the tail of our own pulse so it cannot extend its own regular interval.
     if (!reliableAudio || !hasActivity || pollTick > nowTick || nowTick - pollTick > 2000 ||
         activityTick > nowTick ||
-        (hasPulse && (activityTick <= pulseCompletedTick || activityTick - pulseCompletedTick <= 500)))
+        (hasOwnAttempt && (activityTick <= ownAttemptCompletedTick || activityTick - ownAttemptCompletedTick <= 500)))
         return {baseline, false};
     const uint64_t age = nowTick - activityTick;
     const uint64_t intervalMs = static_cast<uint64_t>(intervalSeconds) * 1000;
