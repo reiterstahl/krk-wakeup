@@ -33,13 +33,18 @@ std::string UtcNow() {
 }
 
 struct Meter {
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    std::wstring selectedId;
+    bool defaultOutputKnown = false;
+    bool selectedIsDefault = false;
+    uint64_t defaultOutputTickMs = 0;
     ComPtr<IMMDevice> device;
     ComPtr<IAudioMeterInformation> peaks;
     ComPtr<IAudioEndpointVolume> volume;
     AudioMeterCoverage coverage = AudioMeterCoverage::Unknown;
 
     HRESULT Connect(const std::wstring& endpointId, const char*& stage) {
-        ComPtr<IMMDeviceEnumerator> enumerator;
+        selectedId = endpointId;
         stage = "activity_enumerator";
         HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
                                       CLSCTX_ALL, IID_PPV_ARGS(&enumerator));
@@ -70,7 +75,32 @@ struct Meter {
         return S_OK;
     }
 
-    HRESULT Read(AudioActivitySnapshot& sample) const {
+    void ReadDefaultOutput(AudioActivitySnapshot& sample) {
+        const uint64_t now = GetTickCount64();
+        if (!defaultOutputTickMs || now - defaultOutputTickMs >= 1000) {
+            defaultOutputKnown = true;
+            selectedIsDefault = true;
+            for (const ERole role : {eConsole, eMultimedia}) {
+                ComPtr<IMMDevice> endpoint;
+                LPWSTR id = nullptr;
+                const HRESULT hr = enumerator->GetDefaultAudioEndpoint(eRender, role, &endpoint);
+                if (FAILED(hr) || FAILED(endpoint->GetId(&id))) {
+                    defaultOutputKnown = false;
+                    selectedIsDefault = false;
+                } else {
+                    selectedIsDefault = selectedIsDefault && selectedId == id;
+                }
+                CoTaskMemFree(id);
+            }
+            defaultOutputTickMs = GetTickCount64();
+        }
+        sample.defaultOutputKnown = defaultOutputKnown;
+        sample.selectedIsDefault = selectedIsDefault;
+        sample.defaultOutputTickMs = defaultOutputTickMs;
+    }
+
+    HRESULT Read(AudioActivitySnapshot& sample) {
+        ReadDefaultOutput(sample);
         sample.stage = "activity_device_state";
         DWORD state = 0;
         HRESULT hr = device->GetState(&state);
@@ -117,6 +147,7 @@ struct AudioActivityMonitor::Impl {
             snapshot.stage = enabled ? "activity_connecting" : "disabled";
             snapshot.error = S_OK;
             snapshot.coverage = AudioMeterCoverage::Unknown;
+            snapshot.defaultOutputKnown = false;
             snapshot.peak = 0.0f;
             snapshot.endpointMuteKnown = false;
             snapshot.endpointVolumeKnown = false;
@@ -137,6 +168,7 @@ struct AudioActivityMonitor::Impl {
             snapshot.state = AudioActivityState::Unavailable;
             snapshot.stage = stage;
             snapshot.error = hr;
+            snapshot.defaultOutputKnown = false;
             snapshot.peak = 0.0f;
             snapshot.coverage = AudioMeterCoverage::Unknown;
             snapshot.endpointMuteKnown = false;
@@ -305,6 +337,7 @@ AudioActivitySnapshot AudioActivityMonitor::Snapshot() const {
     if (state.enabled && !state.endpointId.empty() &&
         snapshot.state != AudioActivityState::Unavailable &&
         now - snapshot.lastProgressTickMs >= 5000) {
+        snapshot.defaultOutputKnown = false;
         snapshot.state = AudioActivityState::Unknown;
         snapshot.stage = "activity_stalled";
         snapshot.error = HRESULT_FROM_WIN32(ERROR_TIMEOUT);

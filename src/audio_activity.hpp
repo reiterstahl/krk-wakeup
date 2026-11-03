@@ -26,6 +26,10 @@ struct AudioActivitySnapshot {
     HRESULT error = S_OK;
     const char* stage = "disabled";
     float peak = 0.0f;
+    // Only route metadata; the saved playback destination never changes.
+    bool defaultOutputKnown = false;
+    bool selectedIsDefault = false;
+    uint64_t defaultOutputTickMs = 0;
     bool hasLastActivity = false;
     // GetTickCount64 includes time spent asleep. UTC is for human-readable logs.
     uint64_t lastActivityTickMs = 0;

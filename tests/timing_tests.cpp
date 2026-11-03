@@ -52,6 +52,20 @@ int main() {
           !PulseSchedule::QualifyingPeak(0.0f, 1) &&
           !PulseSchedule::QualifyingPeak(std::numeric_limits<float>::quiet_NaN(), 5),
           "Only finite audio at least as strong as the configured pulse may postpone it");
+    Check(!PulseSchedule::ProtectionRequired(1, false, true, true),
+          "Only an on-screen, unlocked session with the saved default output uses normal mode");
+    for (int screen : {-1, 0, 2})
+        Check(PulseSchedule::ProtectionRequired(screen, false, true, true),
+              "Unknown, off, and dim displays require protection");
+    Check(PulseSchedule::ProtectionRequired(1, true, true, true) &&
+          PulseSchedule::ProtectionRequired(1, false, true, false) &&
+          PulseSchedule::ProtectionRequired(1, false, false, true),
+          "Lock, another default output, or unknown routing must activate protection");
+    Check(PulseSchedule::FreshDefaultOutput(true, 10000, 9000) &&
+          !PulseSchedule::FreshDefaultOutput(true, 10000, 7999) &&
+          !PulseSchedule::FreshDefaultOutput(true, 10000, 10001) &&
+          !PulseSchedule::FreshDefaultOutput(false, 10000, 9999),
+          "Stale, future, or unknown route samples must not disable protection");
     const auto nowTime = start + seconds(600);
     const auto oldPulseDue = PulseSchedule::AfterSuccess(start, start + seconds(5), 300);
     auto decision = PulseSchedule::AutomaticDue(nowTime, oldPulseDue, 300,
@@ -92,5 +106,9 @@ int main() {
     decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
         1000000, true, true, 999900, 999950, false, 0);
     Check(decision.deferredByAudio, "Music already playing at startup may defer the first automatic pulse");
+    decision = PulseSchedule::AutomaticDue(nowTime, oldPulseDue, 300,
+        1000000, true, true, 999999, 999999, false, 0, true);
+    Check(!decision.deferredByAudio && decision.due == oldPulseDue && decision.due <= nowTime,
+          "Fresh meter activity must not postpone an overdue protection pulse");
     std::cout << "Audio drain, screen policy, observed-audio deferral, and pulse timing checks passed.\n";
 }

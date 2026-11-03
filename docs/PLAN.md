@@ -1,6 +1,6 @@
 # Plan inicial de KRK Wakeup
 
-Fecha de investigación: 2026-10-06. Estado: v0.3.0 añade un límite de 5 minutos con pantalla apagada y aplazamiento por audio observado útil; una prueba mantuvo los GoAux 3 encendidos unos 45 minutos, mientras que un intervalo de 20 minutos permitió que entraran en reposo. Una prueba inicial con 18 minutos funcionó; después se observaron apagados intermitentes con la sesión bloqueada y el PC despierto. También se observaron fallos con 15 minutos. El usuario confirma pantalla apagada y PC despierto; falta repetir la prueba física con la nueva corrección.
+Fecha de investigación inicial: 2026-10-06. Estado actualizado: v0.3.1 amplía la protección de hasta cinco minutos a audífonos/otra salida predeterminada, bloqueo, pantalla apagada/atenuada y datos desconocidos; dentro de ese modo el medidor no aplaza pulsos. Los intervalos de 20 minutos fallaron y los de 18/15 minutos presentaron apagados intermitentes; v0.3.0 también recibió un reporte al usar audífonos. La causa física sigue sin confirmarse. Véase la [revisión de v0.3.1](REVIEW-2026-11-03.md).
 
 ## Objetivo
 
@@ -44,7 +44,8 @@ Windows identifica el DAC, no los parlantes conectados por RCA. La aplicación p
 | Campo | Valor inicial | Función |
 | --- | --- | --- |
 | Reposo estimado de los parlantes | 15 minutos, editable | Referencia para comparar con el intervalo de envío; no modifica el temporizador interno de los GoAux. |
-| Intervalo entre pulsos | 5 minutos, editable | Tiempo entre inicios de pulsos mientras la utilidad está activa. |
+| Intervalo normal | 5 minutos, editable | Plazo base con pantalla encendida, desbloqueada y DAC predeterminado; el audio útil puede aplazarlo. |
+| Protección automática | Máximo 5 minutos | Se aplica a otra salida predeterminada, bloqueo, pantalla apagada/atenuada o datos desconocidos, sin aplazamiento por el medidor. |
 | Duración de la señal | Ajustable, pendiente de calibración | Tiempo durante el cual se reproduce cada pulso. |
 
 Permitir introducir minutos y segundos. Guardar los valores por usuario y mostrar el tiempo hasta el siguiente pulso. Los cambios de intervalo reinician la cuenta desde su aplicación, sin generar una ráfaga de pulsos pendientes. El botón «Probar señal» envía un único pulso y, si el envío termina correctamente mientras la utilidad está activa, reinicia la cuenta del siguiente pulso.

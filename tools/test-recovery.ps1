@@ -77,11 +77,11 @@ Diagnostics=1
     } 'initial unavailable-device attempt'
     foreach ($state in @(0, 2, 1, 0)) {
         Send-DisplayState $state
-        $effective = if ($state -eq 0) { 300 } else { 1080 }
+        $effective = 300 # Unknown routing on the offline fixture always protects.
         Wait-Until { (Read-Log) -match "event=screen_policy display_state=$state normal_interval_s=1080 effective_interval_s=$effective" } 'screen interval policy'
     }
     Send-AppMessage 0x02B1 7 # WM_WTSSESSION_CHANGE / WTS_SESSION_LOCK
-    Wait-Until { (Read-Log) -match 'event=session_lock' } 'session lock diagnostic'
+    Wait-Until { (Read-Log) -match 'event=lock_policy locked=1 effective_interval_s=300' } 'session lock protection'
     $startsBeforeResume = ([regex]::Matches((Read-Log), 'event=pulse_start\b')).Count
     Send-AppMessage 0x0218 4 # WM_POWERBROADCAST / PBT_APMSUSPEND
     Send-AppMessage 0x0218 18 # PBT_APMRESUMEAUTOMATIC

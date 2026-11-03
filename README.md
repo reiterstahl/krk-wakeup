@@ -18,7 +18,7 @@
 
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
-> **Estado:** v0.3.0 publicada. Con pantalla apagada limita el intervalo a 5 minutos y aplaza pulsos si observa audio útil en la salida seleccionada. Los apagados de los GoAux con 15–18 minutos siguen sin una causa física confirmada; falta validar esta nueva política en el equipo real.
+> **Estado:** v0.3.1 publicada. Refuerza los pulsos al usar audífonos, bloquear Windows o apagar/atenuar la pantalla: máximo 5 minutos, sin aplazamiento por el medidor en ese modo. La causa física de los apagados sigue sin confirmarse; esta versión requiere una nueva prueba con los GoAux.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
@@ -41,15 +41,17 @@
 
 Las capturas muestran la interfaz real en Windows sin una salida de audio seleccionada. La nitidez en escala 4K depende del escalado DPI de Windows; todavía falta revisarla en un monitor 4K físico.
 
-## Intervalo según pantalla y audio
+## Intervalo y modo de protección
 
-- **Pantalla encendida o atenuada:** se usa **Intervalo normal**, el valor que configures en la ventana. Tus ajustes anteriores se conservan.
-- **Pantalla apagada:** se usa el menor entre el intervalo normal y **5 minutos**. Si el último envío ya es demasiado antiguo, se vuelve a evaluar inmediatamente al apagarse la pantalla.
-- **Audio útil en el DAC:** el próximo pulso se aplaza hasta que pase ese intervalo desde la última señal suficientemente fuerte observada. No hace falta cerrar la app al escuchar música.
+- **Pantalla encendida, sesión desbloqueada y DAC como salida predeterminada:** se conserva **Intervalo normal**. El audio útil observado en el DAC puede aplazar los pulsos automáticos.
+- **Audífonos u otra salida predeterminada, sesión bloqueada, pantalla apagada o atenuada:** se usa el menor entre el intervalo normal y **5 minutos**. En este modo de protección las lecturas del medidor no aplazan pulsos, aunque indiquen actividad.
+- **Pantalla o salida predeterminada desconocida/sin datos recientes:** también se aplica el modo de protección. Un intervalo normal menor de cinco minutos se conserva.
 
-Para aplazar, la lectura debe ser reciente, con volumen/mute conocidos y un pico al menos igual al nivel digital del pulso configurado. Un ruido mínimo, un medidor sin respuesta o una salida desconocida no suprimen envíos. El pulso propio y su cola en el medidor tampoco alargan el siguiente intervalo. **Probar tono** y **Probar pulso** siguen siendo manuales, incluso con audio o con la utilidad pausada.
+La ruta predeterminada se consulta aproximadamente cada segundo con [GetDefaultAudioEndpoint](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdeviceenumerator-getdefaultaudioendpoint), para los roles de consola y multimedia. Si cualquiera utiliza otra salida, se activa la protección. Esto solo cambia la temporización: **el destino de los pulsos sigue siendo el SMSL guardado**. El planificador consulta el estado por su cuenta, sin depender del temporizador de la ventana.
 
-Los cambios de estado se reciben mediante las [notificaciones de pantalla de la sesión de Windows](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids). Mientras el estado sea desconocido se aplica también el límite de 5 minutos. Al encenderse se restaura el intervalo normal desde el último envío o audio útil, sin empezar una espera nueva desde cero. Bloquear la sesión por sí solo no activa el modo de pantalla apagada.
+Al entrar o salir de protección se recalcula el plazo desde el último pulso, sin empezar una espera completa nueva. Con un pulso ya vencido se envía al volver a evaluar. La ventana muestra **protección: 05:00** (o tu intervalo menor). Los errores de audio conservan el reintento cada 5 segundos.
+
+El aplazamiento por audio queda limitado al modo normal: requiere lecturas recientes, volumen/mute conocidos y un pico al menos igual al nivel digital configurado. El pulso propio y su cola no alargan el siguiente intervalo. **Probar tono** y **Probar pulso** siguen disponibles con la utilidad pausada. Los cambios de pantalla usan [notificaciones de la sesión de Windows](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids); el bloqueo activa protección aunque no llegue una notificación de pantalla.
 
 La utilidad busca **prevenir** el reposo; no se considera capaz de volver a encender unos KRK que ya se apagaron.
 
@@ -63,7 +65,7 @@ La idea es sencilla: mientras la utilidad esté activa, genera un pulso discreto
 
 - Icono junto al reloj de Windows y una ventana compacta con tema negro OLED. Las pruebas de audio, las acciones principales y los ajustes avanzados están separados en grupos. La interfaz ajusta fuentes y controles al DPI de cada monitor para verse nítida en pantallas de alta resolución; falta validarla visualmente en un monitor 4K real.
 - Salida de audio fija: cambiar la salida predeterminada a auriculares Bluetooth no cambia el destino del pulso.
-- Prueba de tono audible de 3 segundos (440 Hz, 5 % de nivel digital), prueba del pulso configurado, pausa, intervalo normal configurable y modo automático de 5 minutos con pantalla apagada.
+- Prueba de tono audible de 3 segundos (440 Hz, 5 % de nivel digital), prueba del pulso configurado, pausa, intervalo normal configurable y modo de protección de hasta 5 minutos con audífonos, bloqueo o pantalla apagada/atenuada.
 - Ajustes ampliables de reposo estimado, duración, frecuencia y nivel digital de la señal.
 - Inicio opcional al entrar en la cuenta de Windows, sin instalador ni privilegios de administrador.
 - Reintentos cada 5 segundos ante fallos de audio y recuperación inmediata al reanudar Windows; nunca redirige los pulsos automáticamente a otra salida.
@@ -75,17 +77,17 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 
 ## Descargar y probar
 
-1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.3.0-windows-x64.zip`** de la versión **v0.3.0** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
-2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva. Ejecuta v0.3.0 manualmente una vez: si ya tenías activado el inicio con Windows, actualizará la ruta registrada para el nuevo ejecutable.
+1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.3.1-windows-x64.zip`** de la versión **v0.3.1** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva. Ejecuta v0.3.1 manualmente una vez: si ya tenías activado el inicio con Windows, actualizará la ruta registrada para el nuevo ejecutable.
 3. Abre la aplicación y selecciona la salida de reproducción que corresponde al **SMSL SU-1**. Puedes comparar su nombre con **Configuración → Sistema → Sonido** de Windows.
 4. Con un volumen cómodo en los GoAux, pulsa **Probar tono**. Reproduce 3 segundos a 440 Hz y 5 % de nivel digital solo por la salida seleccionada, incluso si la aplicación está pausada. Confirma que se oye en los GoAux y no en otro dispositivo. Después, pulsa **Probar pulso**: usa la señal automática configurada, cuyo perfil inicial es **440 Hz**, **1000 ms** y **1 %** de nivel digital. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
 5. Guarda la configuración. Cambia la salida predeterminada de Windows a tus auriculares BT y comprueba que la prueba sigue saliendo solo por el DAC. Después, deja los GoAux sin otro audio durante más de su tiempo habitual de reposo y observa si permanecen activos.
 
-Los campos de tiempo usan `mm:ss`. **Reposo estimado** sirve de referencia para calibrar; no modifica el temporizador interno de los KRK. **Intervalo normal** controla el plazo base con pantalla encendida; con pantalla apagada se limita a 5 minutos. La actividad útil puede aplazar el envío. Si el intervalo iguala o supera el reposo estimado, la app muestra un aviso.
+Los campos de tiempo usan `mm:ss`. **Reposo estimado** sirve de referencia para calibrar; no modifica el temporizador interno de los KRK. **Intervalo normal** controla el plazo base en modo normal; la protección lo limita a 5 minutos y no admite aplazamiento por actividad observada. Si el intervalo iguala o supera el reposo estimado, la app muestra un aviso.
 
 **Frecuencia** acepta de **10 a 15000 Hz**. Para ensayar una frecuencia baja, usa **Probar pulso**, que reproduce tus ajustes. **Probar tono** sigue siendo la prueba audible fija de 440 Hz. Las frecuencias bajas son experimentales: su eficacia para evitar el reposo aún debe comprobarse en los GoAux.
 
-Un intervalo de **20 minutos** no evitó el reposo en los GoAux de prueba; **18 minutos** funcionó inicialmente, pero después se observaron apagados intermitentes con 18 y 15 minutos, con pantalla apagada y el PC despierto. Un único pulso perdido con ese intervalo puede dejar unos 36 minutos sin señal efectiva. La nueva política conserva tu intervalo normal y aplica automáticamente el límite de **5 minutos** cuando se apaga la pantalla. Si se apagan incluso con un intervalo corto, usa **Probar tono** para confirmar la ruta de audio y ajusta nivel y duración de uno en uno. El umbral de detección de los GoAux no está publicado en su manual. Comprueba también que Windows y el SMSL SU-1 no estén silenciados.
+Un intervalo de **20 minutos** no evitó el reposo en los GoAux de prueba; **18 minutos** funcionó inicialmente, pero después se observaron apagados intermitentes con 18 y 15 minutos, con pantalla apagada y el PC despierto. Un único pulso perdido con ese intervalo puede dejar unos 36 minutos sin señal efectiva. v0.3.0 añadió cinco minutos con pantalla apagada, pero se reportó otro apagado al usar audífonos. v0.3.1 amplía la protección a otra salida predeterminada, bloqueo y pantalla atenuada, y evita aplazamientos por el medidor dentro de ese modo. Si se apagan incluso con un intervalo corto, usa **Probar tono** para confirmar la ruta de audio y ajusta nivel y duración de uno en uno. El umbral de detección de los GoAux no está publicado en su manual. Comprueba también que Windows y el SMSL SU-1 no estén silenciados.
 
 **Al bloquear Windows con Win + L**, la utilidad sigue ejecutándose mientras el equipo permanezca encendido. Si Windows entra en suspensión o hibernación, los procesos de escritorio se pausan y la app solicita un nuevo pulso al reanudar, siempre que esté activa y tenga una salida seleccionada. [Documentación de Microsoft sobre suspensión](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/integrating-apps-with-modern-standby).
 
@@ -102,21 +104,22 @@ Haz clic derecho en el icono junto al reloj y elige **Activar diagnóstico**. La
 | `last_audio_utc`, `last_audio_age_ms` | Última señal observada en esa salida, incluida música y audio de otras aplicaciones. |
 | `poll_age_ms`, `progress_age_ms`, `attempt_age_ms` | Si el observador seguía respondiendo, estaba reconectando o dejó de obtener lecturas. |
 | `display_state`, `session_lock`, `power_suspend`, `power_resume` | Pantalla apagada/encendida, bloqueo y suspensión/reanudación real. |
-| `screen_policy`, `effective_interval_s` | Estado de pantalla e intervalo que se está aplicando. |
+| `screen_policy`, `lock_policy`, `output_policy`, `protection`, `effective_interval_s` | Cambios de pantalla, bloqueo y ruta; protección e intervalo efectivo. |
+| `default_output_known`, `selected_is_default` | Si la ruta predeterminada pudo consultarse y coincide con la salida guardada. No se guardan identificadores. |
 | `pulse_deferred`, `qualifying_audio_utc` | Aplazamiento por señal útil y su última observación. |
 | `heartbeat` | Resumen cada 30 segundos con la actividad, pantalla, intervalo efectivo y estado del trabajador. |
 
-La ventana muestra **Audio observado hace mm:ss**. Se consulta el medidor de la salida guardada cada 100 ms, sin abrir un stream de reproducción ni grabar audio. El historial comienza al abrir la app y se reinicia si eliges otra salida; sus lecturas suficientemente fuertes y recientes pueden aplazar pulsos automáticos.
+La ventana muestra **Audio observado hace mm:ss**. Se consulta el medidor de la salida guardada cada 100 ms, sin abrir un stream de reproducción ni grabar audio. El historial comienza al abrir la app y se reinicia si eliges otra salida; sus lecturas suficientemente fuertes y recientes pueden aplazar pulsos automáticos solo en modo normal.
 
 Hay límites: el [medidor de Windows](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudiometerinformation) mide antes del volumen/mute del endpoint, y un medidor por software no ve audio en modo exclusivo. Además, cada [lectura cubre un período del dispositivo](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nf-endpointvolume-iaudiometerinformation-getpeakvalue), por lo que el muestreo puede perder sonidos muy breves. Un dato desconocido o un observador sin respuesta no se presentan como silencio confirmado. `pulse_ok` tampoco demuestra sonido físico por RCA ni que los KRK reiniciaran su temporizador.
 
-El informe solo guarda tiempos, estados y niveles/metadatos; no graba audio ni incluye nombres del equipo, rutas del ejecutable o identificadores de dispositivos. Para probar esta versión, conserva tu intervalo normal y activa el diagnóstico: el reporte mostrará el cambio a 5 minutos al apagarse la pantalla. Si los parlantes se apagan, conserva el reporte de esa ejecución y anota la hora aproximada.
+El informe solo guarda tiempos, estados y niveles/metadatos; no graba audio ni incluye nombres del equipo, rutas del ejecutable o identificadores de dispositivos. Para probar esta versión, conserva tu intervalo normal y activa el diagnóstico: el reporte mostrará `protection=1` y `effective_interval_s=300` al usar audífonos o bloquear Windows (o tu intervalo menor). Enciende manualmente los KRK si ya están en reposo antes de comenzar. Si los parlantes se apagan, conserva el reporte de esa ejecución y anota la hora aproximada.
 
 ## Revisión de fiabilidad
 
 Un envío ahora se ejecuta en una copia oculta y acotada del mismo ejecutable. Si el controlador se bloquea, vence un límite global de duración del pulso más 10 segundos; el helper se termina y la app reintenta. Se mantienen la precarga del búfer, la comprobación de vaciado y el intervalo entre comienzos de pulso. También se borran los datos del último pulso al cambiar de salida y se cancelan envíos antiguos al pausar, salir o cambiar la señal.
 
-La [revisión técnica](docs/REVIEW-2026-10-18.md) detalla los hallazgos y las pruebas. La prueba de una llamada que nunca vuelve usa un renderer simulado; no sustituye las pruebas reales del SMSL SU-1 con la pantalla apagada.
+La [revisión de v0.3.1](docs/REVIEW-2026-11-03.md) detalla la corrección de audífonos y sus pruebas; la [revisión anterior](docs/REVIEW-2026-10-18.md) cubre el aislamiento de audio y diagnóstico. La prueba de una llamada que nunca vuelve usa un renderer simulado; no sustituye las pruebas reales del SMSL SU-1 con la pantalla apagada.
 
 ## Inicio con Windows
 
@@ -141,7 +144,7 @@ cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-El archivo estará en `build\Release\krk-wakeup.exe`. Cada cambio en `main` ejecuta la compilación y pruebas de arranque, registro de inicio, vaciado/temporización, política de pantalla y aplazamiento por audio, aislamiento de llamadas bloqueadas, diagnóstico optativo y recuperación con eventos de bloqueo y reanudación simulados en GitHub Actions. Estas pruebas no miden el reposo físico; los [pasos de validación](docs/PLAN.md) describen esa comprobación.
+El archivo estará en `build\Release\krk-wakeup.exe`. Cada cambio en `main` ejecuta la compilación y pruebas de arranque, registro de inicio, vaciado/temporización, política de protección y aplazamiento por audio, planificador real con cambios simulados de salida y destino fijo, aislamiento de llamadas bloqueadas, diagnóstico optativo y recuperación con eventos de bloqueo y reanudación simulados en GitHub Actions. Estas pruebas no miden el reposo físico; los [pasos de validación](docs/PLAN.md) describen esa comprobación.
 
 ## Proyecto
 

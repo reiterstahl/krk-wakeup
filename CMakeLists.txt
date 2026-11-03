@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(KRKWakeup VERSION 0.3.0 LANGUAGES CXX RC)
+project(KRKWakeup VERSION 0.3.1 LANGUAGES CXX RC)
 
 if(NOT WIN32)
     message(FATAL_ERROR "KRK Wakeup requires Windows")
@@ -17,6 +17,7 @@ add_executable(krk-wakeup WIN32
     src/diagnostics.hpp
     src/playback.hpp
     src/pulse_schedule.hpp
+    src/pulse_worker.hpp
     app.rc
 )
 target_compile_features(krk-wakeup PRIVATE cxx_std_17)
@@ -36,8 +37,9 @@ if(BUILD_TESTING)
     add_test(NAME audio-drain-and-timing COMMAND timing-tests)
     add_executable(audio-process-tests tests/audio_process_tests.cpp src/audio_process.cpp)
     target_link_libraries(audio-process-tests PRIVATE shell32)
+    add_executable(worker-tests tests/worker_tests.cpp)
     add_executable(diagnostics-tests tests/diagnostics_tests.cpp src/diagnostics.cpp)
-    foreach(test_target IN ITEMS audio-process-tests diagnostics-tests)
+    foreach(test_target IN ITEMS audio-process-tests diagnostics-tests worker-tests)
         target_compile_features(${test_target} PRIVATE cxx_std_17)
         target_include_directories(${test_target} PRIVATE src)
         target_compile_definitions(${test_target} PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
@@ -48,6 +50,8 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME isolated-audio-recovery COMMAND audio-process-tests)
     set_tests_properties(isolated-audio-recovery PROPERTIES TIMEOUT 35)
+    add_test(NAME worker-routing-and-protection COMMAND worker-tests)
+    set_tests_properties(worker-routing-and-protection PROPERTIES TIMEOUT 35)
     add_test(NAME optional-instance-diagnostics COMMAND diagnostics-tests)
     set_tests_properties(optional-instance-diagnostics PROPERTIES TIMEOUT 20)
 endif()
