@@ -18,7 +18,8 @@ using Microsoft::WRL::ComPtr;
 namespace {
 constexpr auto kWriteInterval = std::chrono::milliseconds(20);
 constexpr auto kReconnectInterval = std::chrono::seconds(2);
-constexpr REFERENCE_TIME kBufferDuration = 200 * 10000;  // 200 ms in 100 ns units
+// Room for the queue plus the whole closing fade, in 100 ns units.
+constexpr REFERENCE_TIME kBufferDuration = 600 * 10000;
 // Audio kept queued in Windows. Enough to ride out a busy scheduler, short
 // enough that a level change is heard within a fraction of a second.
 constexpr unsigned kQueuedMs = 120;
@@ -181,7 +182,7 @@ struct KeepAliveStream::Impl {
                 bufferFrames, std::max<uint64_t>(1, Signal::FramesFor(kQueuedMs, format.sampleRate))));
             const double requested = active.levelPercent / 100.0;
             Signal::ContinuousTone tone;
-            tone.Configure(format.sampleRate, active.frequencyHz);
+            tone.Configure(format.sampleRate, active.frequencyHz, Signal::kContinuousLeadInMs);
             WasapiUtil::PathGain path =
                 WasapiUtil::ReadPathGain(endpointVolume.Get(), sessionVolume.Get());
             tone.SetTarget(Signal::CompensatedLevel(requested, active.compensateVolume,
@@ -296,16 +297,17 @@ struct KeepAliveStream::Impl {
                                                                path.known, path.gain);
             }
             if (SUCCEEDED(failure)) {
-                // Closing on purpose: fade to silence so stopping makes no click,
-                // then let Windows play what is queued.
-                tone.SetTarget(0.0);
-                const UINT32 fade = static_cast<UINT32>(Signal::FramesFor(40, format.sampleRate));
+                // Closing on purpose: fade to silence slowly enough that the
+                // low tone is not cut, then let Windows play what is queued.
+                tone.Release();
+                const UINT32 fade = static_cast<UINT32>(
+                    Signal::FramesFor(Signal::kContinuousReleaseMs, format.sampleRate));
                 if (SUCCEEDED(write(fade))) {
                     UINT32 padding = 0;
                     if (SUCCEEDED(client->GetCurrentPadding(&padding))) {
                         const DWORD queuedMs = static_cast<DWORD>(
                             static_cast<uint64_t>(padding) * 1000 / format.sampleRate);
-                        Sleep(std::min<DWORD>(queuedMs + 20, 250));
+                        Sleep(std::min<DWORD>(queuedMs + 20, 600));
                     }
                 }
             }
@@ -406,7 +408,7 @@ struct KeepAliveStream::Impl {
     }
 
     Impl() { Launch({}, false); }
-    ~Impl() { Retire(std::chrono::milliseconds(600)); }
+    ~Impl() { Retire(std::chrono::milliseconds(1500)); }
 };
 
 KeepAliveStream::KeepAliveStream() : impl_(std::make_unique<Impl>()) {}

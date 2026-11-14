@@ -20,6 +20,14 @@ constexpr unsigned kColdLeadInMs = 1500;
 // Inaudible tail so the fade-out is fully played before the stream stops.
 constexpr unsigned kTailMs = 250;
 constexpr unsigned kFadeMs = 30;
+// The continuous tone waits this long, sending only the inaudible dither,
+// before it fades in. A DAC that unmutes halfway through a cycle of a low tone
+// turns that step into a thump; by the time the tone starts the output is
+// already open.
+constexpr unsigned kContinuousLeadInMs = 2000;
+// Closing fade of the continuous tone. A 20 Hz cycle lasts 50 ms, so anything
+// much shorter than this cuts the wave and is heard as a thump.
+constexpr unsigned kContinuousReleaseMs = 300;
 
 // Windows applies the endpoint (and session) volume after our samples. The
 // compensation raises the digital level by at most this factor, so a sudden
@@ -149,20 +157,33 @@ inline PulseShape MakePulse(unsigned sampleRate, unsigned durationMs, unsigned f
 }
 
 // Continuous tone whose phase and level survive from one buffer to the next.
-// The level moves towards its target smoothly: quickly downwards, so a volume
-// increase in Windows is answered at once, and slowly upwards.
+// It starts after a silent lead-in and the level moves towards its target
+// smoothly: quickly downwards, so a volume increase in Windows is answered at
+// once, and slowly upwards. Release() fades it out without cutting the wave.
 class ContinuousTone {
 public:
-    void Configure(unsigned sampleRate, unsigned frequencyHz) {
+    void Configure(unsigned sampleRate, unsigned frequencyHz, unsigned leadInMs = 0) {
         sampleRate_ = std::max(1u, sampleRate);
         step_ = kTau * frequencyHz / sampleRate_;
         down_ = 1.0 - std::exp(-1.0 / (0.005 * sampleRate_));
         up_ = 1.0 - std::exp(-1.0 / (0.300 * sampleRate_));
+        // Six time constants: the fade ends 52 dB down.
+        release_ = 1.0 - std::exp(-6.0 / std::max<double>(1.0,
+            static_cast<double>(FramesFor(kContinuousReleaseMs, sampleRate_))));
+        leadFrames_ = FramesFor(leadInMs, sampleRate_);
     }
-    void SetTarget(double level) { target_ = std::clamp(level, 0.0, kMaxDigitalLevel); }
+    void SetTarget(double level) {
+        if (!releasing_) target_ = std::clamp(level, 0.0, kMaxDigitalLevel);
+    }
+    void Release() {
+        releasing_ = true;
+        target_ = 0.0;
+    }
     double Level() const { return level_; }
     double Next() {
-        level_ += (target_ - level_) * (target_ < level_ ? down_ : up_);
+        if (position_ < leadFrames_) return Dither(position_++);
+        level_ += (target_ - level_) *
+            (releasing_ ? release_ : target_ < level_ ? down_ : up_);
         const double value = level_ * std::sin(phase_) + Dither(position_++);
         phase_ += step_;
         if (phase_ >= kTau) phase_ -= kTau;
@@ -173,9 +194,12 @@ private:
     double step_ = 0.0;
     double down_ = 1.0;
     double up_ = 1.0;
+    double release_ = 1.0;
     double phase_ = 0.0;
     double level_ = 0.0;
     double target_ = 0.0;
     uint64_t position_ = 0;
+    uint64_t leadFrames_ = 0;
+    bool releasing_ = false;
 };
 }  // namespace Signal

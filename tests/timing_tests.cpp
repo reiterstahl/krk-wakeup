@@ -124,6 +124,32 @@ int main() {
     tone.SetTarget(0.0);
     for (int frame = 0; frame < 2400; ++frame) tone.Next();
     Check(tone.Level() < 0.02 * 0.001, "Lowering the level must take effect within 50 ms");
+    ContinuousTone gentle;
+    gentle.Configure(48000, 20, kContinuousLeadInMs);
+    gentle.SetTarget(0.2);
+    double lead = 0;
+    for (int frame = 0; frame < 48000 * 2; ++frame) lead = std::max(lead, std::abs(gentle.Next()));
+    Check(lead <= kDitherLevel, "The continuous tone must stay silent during its lead-in");
+    Check(std::abs(gentle.Next()) <= kDitherLevel * 1.5, "The tone must start at the zero of its wave");
+    for (int frame = 0; frame < 48000 * 3; ++frame) gentle.Next();
+    Check(gentle.Level() > 0.199, "The continuous tone must reach its level after the lead-in");
+    gentle.Release();
+    previous = gentle.Next();
+    jump = 0;
+    double afterCycle = 0;
+    const int releaseFrames = static_cast<int>(FramesFor(kContinuousReleaseMs, 48000));
+    for (int frame = 0; frame < releaseFrames; ++frame) {
+        const double value = gentle.Next();
+        jump = std::max(jump, std::abs(value - previous));
+        previous = value;
+        if (frame == 2400) afterCycle = gentle.Level();
+    }
+    Check(afterCycle > 0.2 * 0.3, "The closing fade must span several cycles of a 20 Hz tone");
+    Check(gentle.Level() < 0.2 * 0.004, "The closing fade must end in silence");
+    Check(jump < 0.001, "The closing fade must not cut the wave");
+    gentle.SetTarget(0.2);
+    for (int frame = 0; frame < 4800; ++frame) gentle.Next();
+    Check(gentle.Level() < 0.2 * 0.004, "A released tone must stay silent");
     Format pcm16{false, 16, 2, 4, 48000};
     uint8_t frameBytes[4] = {};
     WriteFrame(frameBytes, pcm16, 0.5);

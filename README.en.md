@@ -18,7 +18,7 @@
 
 **KRK Wakeup** is a small Windows utility that sends a short audio signal to an output you choose. It was created to prevent KRK GoAux 3 speakers connected over RCA to an SMSL SU-1 from entering standby during long pauses.
 
-> **Status:** v0.4.0 is on `main`, pending a physical test with the GoAux. It adds a **continuous signal** (20 Hz at 2 %) on a stream that stays open, so the DAC no longer idles between pulses; pulses wait for an idle DAC to wake, offset the Windows volume, and are no longer deferred by observed audio. The latest published release is still v0.3.1.
+> **Status:** v0.4.1 is on `main`. With v0.4.0 the GoAux stopped going to standby in the physical test; v0.4.1 softens the start and stop of the continuous signal, pending confirmation by ear. It adds a **continuous signal** (20 Hz at 2 %) on a stream that stays open, so the DAC no longer idles between pulses; pulses wait for an idle DAC to wake, offset the Windows volume, and are no longer deferred by observed audio. The latest published release is still v0.3.1.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: a short signal to keep your speakers ready" width="100%">
@@ -52,6 +52,7 @@ Earlier versions sent a one-second pulse every few minutes and closed the stream
 What it does now:
 
 - **Continuous signal** (**Señal continua**). While active, the app keeps a stream open on the saved output with a **20 Hz tone at 2 %**, inaudible on 3-inch speakers. The DAC never idles and the KRKs receive signal all the time. **Más ajustes** has the on/off switch, frequency, and level (level 0 only keeps the DAC open, with no tone).
+- **Gentle start and stop (v0.4.1).** When the stream opens, the tone waits 2 s in silence and then fades in; on pause or exit it fades out over 0.3 s. In v0.4.0 the tone came in while the DAC was still opening and was cut in 5 ms on close, which could be heard as a thump.
 - **Pulses with a lead-in.** If nothing is playing on the output, the pulse is preceded by 1.5 s of inaudible lead-in so the DAC wakes before the tone. With the continuous signal on, it is not needed and the pulse plays at once.
 - **Volume compensation.** The digital level rises to offset the Windows volume and the app's volume in the mixer, by at most 10 times and never above 50 % digital. When the volume goes up, the level drops within a few hundredths of a second. Disable it with `CompensateVolume=0` in `settings.ini`. **Probar tono** is not compensated.
 - **No deferral.** Pulses always go out on time.

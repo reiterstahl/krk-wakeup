@@ -18,7 +18,7 @@
 
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
-> **Estado:** v0.4.0 en `main`, pendiente de prueba física con los GoAux. Añade una **señal continua** (20 Hz al 2 %) en un stream que queda abierto, para que el DAC no entre en reposo entre pulsos; los pulsos esperan a que un DAC inactivo despierte, compensan el volumen de Windows y ya no se aplazan por el audio observado. La última versión publicada en Releases sigue siendo v0.3.1.
+> **Estado:** v0.4.1 en `main`. Con v0.4.0 los GoAux dejaron de apagarse en la prueba física; v0.4.1 suaviza el arranque y el cierre de la señal continua, pendiente de confirmar al oído. Añade una **señal continua** (20 Hz al 2 %) en un stream que queda abierto, para que el DAC no entre en reposo entre pulsos; los pulsos esperan a que un DAC inactivo despierte, compensan el volumen de Windows y ya no se aplazan por el audio observado. La última versión publicada en Releases sigue siendo v0.3.1.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
@@ -52,6 +52,7 @@ Las versiones anteriores enviaban un pulso de 1 s cada pocos minutos y cerraban 
 Qué hace ahora:
 
 - **Señal continua.** Con la app activa mantiene abierto un stream hacia la salida guardada con un tono de **20 Hz al 2 %**, inaudible en unos parlantes de 3 pulgadas. El DAC no vuelve a quedar inactivo y los KRK reciben señal todo el tiempo. Se ajusta en **Más ajustes**: activar o no, frecuencia y nivel (con nivel 0 solo mantiene abierto el DAC, sin tono).
+- **Arranque y cierre suaves (v0.4.1).** Al abrir el stream, el tono espera 2 s en silencio y después sube de a poco; al pausar o salir se apaga en 0,3 s. En v0.4.0 el tono entraba mientras el DAC todavía se abría y se cortaba en 5 ms al cerrar, lo que podía oírse como un golpe.
 - **Pulsos con espera.** Si no suena nada por la salida, el pulso va precedido de 1,5 s inaudibles para que el DAC despierte antes del tono. Con la señal continua activa no hace falta y sale de inmediato.
 - **Compensación de volumen.** El nivel digital sube para contrarrestar el volumen de Windows y el de la app en el mezclador, como máximo 10 veces y sin pasar del 50 % digital. Al subir el volumen, el nivel baja en unas centésimas de segundo. Se desactiva con `CompensateVolume=0` en `settings.ini`. **Probar tono** no se compensa.
 - **Sin aplazamientos.** Los pulsos salen siempre a su hora.

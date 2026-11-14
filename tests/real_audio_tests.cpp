@@ -107,7 +107,11 @@ int main() {
     Check(WaitFor([&] { return stream.Snapshot().state == KeepAliveState::Running; }, 8000),
           std::string("the continuous stream must start; state=") +
           KeepAliveStateName(stream.Snapshot().state) + " stage=" + stream.Snapshot().stage);
-    Sleep(1500);
+    peak = PeakDuring(meter.Get(), [] { Sleep(1000); });
+    std::cout << "continuous lead-in: peak=" << peak << '\n';
+    Check(peak < 0.002f, "the continuous tone must open the output in silence");
+    Check(WaitFor([&] { return stream.Snapshot().digitalLevel > 0.0195; }, 8000),
+          "the continuous tone must fade in after its lead-in");
     const KeepAliveSnapshot before = stream.Snapshot();
     peak = PeakDuring(meter.Get(), [] { Sleep(2000); });
     const KeepAliveSnapshot after = stream.Snapshot();
