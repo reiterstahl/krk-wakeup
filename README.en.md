@@ -18,7 +18,7 @@
 
 **KRK Wakeup** is a small Windows utility that sends a short audio signal to an output you choose. It was created to prevent KRK GoAux 3 speakers connected over RCA to an SMSL SU-1 from entering standby during long pauses.
 
-> **Status:** v0.3.1 is released. Headphones, session lock, and an off/dim display now enforce a five-minute maximum without meter-based deferral in protection mode. The physical cause of standby remains unconfirmed; this version needs another trial on the GoAux speakers.
+> **Status:** v0.4.0 is on `main`, pending a physical test with the GoAux. It adds a **continuous signal** (20 Hz at 2 %) on a stream that stays open, so the DAC no longer idles between pulses; pulses wait for an idle DAC to wake, offset the Windows volume, and are no longer deferred by observed audio. The latest published release is still v0.3.1.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: a short signal to keep your speakers ready" width="100%">
@@ -41,17 +41,37 @@
 
 These are captures of the actual Windows interface with no audio output selected. Sharpness at 4K depends on Windows DPI scaling; a physical 4K monitor check is still pending.
 
+## Continuous signal (v0.4.0)
+
+Earlier versions sent a one-second pulse every few minutes and closed the stream. The v0.4.0 review found three weaknesses in that signal, not in the timer:
+
+- **The DAC idled between pulses.** With no stream open, Windows stops feeding the SMSL SU-1; when the pulse arrives the DAC is still waking and can swallow its start, or all of it. This happens exactly when nothing else plays through the DAC: with headphones, or with the display off.
+- **The level depended on the Windows volume.** The 1 % is applied before the volume: at 20 % volume the pulse left about 24 dB weaker than at 100 %.
+- **A brief sound deferred the pulse.** A Windows notification counted as "useful audio" and postponed the pulse a full interval.
+
+What it does now:
+
+- **Continuous signal** (**Señal continua**). While active, the app keeps a stream open on the saved output with a **20 Hz tone at 2 %**, inaudible on 3-inch speakers. The DAC never idles and the KRKs receive signal all the time. **Más ajustes** has the on/off switch, frequency, and level (level 0 only keeps the DAC open, with no tone).
+- **Pulses with a lead-in.** If nothing is playing on the output, the pulse is preceded by 1.5 s of inaudible lead-in so the DAC wakes before the tone. With the continuous signal on, it is not needed and the pulse plays at once.
+- **Volume compensation.** The digital level rises to offset the Windows volume and the app's volume in the mixer, by at most 10 times and never above 50 % digital. When the volume goes up, the level drops within a few hundredths of a second. Disable it with `CompensateVolume=0` in `settings.ini`. **Probar tono** is not compensated.
+- **No deferral.** Pulses always go out on time.
+- **No call ducking.** The app asks Windows not to lower its volume while a call is in progress.
+
+The window's second status line shows the applied state: "Señal continua: activa · 20 Hz · 2 %", or why it is not active (output unavailable, in exclusive use, muted in Windows). "sube el volumen de Windows" means the volume is so low that the compensation reached its cap.
+
+Two things to know. Windows treats an open stream as a reason **not to sleep the computer when idle**; turning the display off is unaffected. And whether 20 Hz at 2 % is enough for the GoAux standby detector is **not yet confirmed**: if they still turn off, raise the continuous level first and then the frequency (for example 30–40 Hz), one at a time.
+
 ## Intervals and protection mode
 
-- **Screen on, session unlocked, saved DAC used as the default output:** retains **Intervalo normal**. Useful observed audio on the DAC may postpone automatic pulses.
-- **Headphones or another default output, locked session, off or dim display:** uses the shorter of the normal interval and **five minutes**. Meter readings cannot postpone pulses in this protection mode, even if they report activity.
+- **Screen on, session unlocked, saved DAC used as the default output:** retains **Intervalo normal**.
+- **Headphones or another default output, locked session, off or dim display:** uses the shorter of the normal interval and **five minutes**.
 - **Unknown or stale default-output/display information:** also activates protection. Normal intervals shorter than five minutes remain unchanged.
 
 The default route is checked roughly once per second with [GetDefaultAudioEndpoint](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdeviceenumerator-getdefaultaudioendpoint), for the console and multimedia roles. Either role pointing elsewhere activates protection. This only affects timing: **pulses still target the saved SMSL output**. The scheduler checks routing independently of the window timer.
 
 Entering or leaving protection recalculates the deadline from the last pulse instead of starting a new full wait. An overdue pulse is sent on reevaluation. The window shows **protección: 05:00**, or your shorter interval. Audio errors still retry every five seconds.
 
-Audio-based deferral is limited to normal mode and requires fresh readings, known volume/mute, and a peak at least as strong as the configured digital level. The app's own pulse and its meter tail do not extend the next interval. Manual **Probar tono** and **Probar pulso** remain available while paused. Display changes use [Windows session notifications](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids); locking also activates protection if a display notification is missing.
+Since v0.4.0 observed audio no longer defers pulses in any mode: the meter reads before the Windows volume and cannot tell a brief notification from signal the speakers noticed. **Probar tono** and **Probar pulso** remain available while paused. Display changes use [Windows session notifications](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids); session lock activates protection even if no display notification arrives.
 
 The utility aims to **prevent** standby; it is not considered able to turn the KRK speakers back on after they shut down.
 
@@ -77,7 +97,7 @@ The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → K
 
 ## Download and test
 
-1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.3.1-windows-x64.zip`** from **v0.3.1**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+1. **To test v0.4.0** before it is released, download the `krk-wakeup-windows-x64` artifact from the latest green run of [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml) (requires a GitHub login). The published release is the previous one: Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.3.1-windows-x64.zip`** from **v0.3.1**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
 2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place. Run v0.3.1 manually once: if startup was enabled, it will update the registered path to this executable.
 3. Open the app and select the playback output corresponding to the **SMSL SU-1**. You can compare its name with **Settings → System → Sound** in Windows.
 4. Set the GoAux speakers to a comfortable volume, then click **Probar tono** (Test tone). It plays for three seconds at 440 Hz and 5% digital level only through the selected output, even if the app is paused. Confirm that you hear it on the GoAux and nowhere else. Next, click **Probar pulso** (Test pulse): it uses the configured automatic signal, initially **440 Hz**, **1000 ms**, and **1%** digital level. Change these values under **Más ajustes** (More settings) if the signal is annoying or fails to prevent standby.
@@ -106,10 +126,10 @@ Right-click the notification area icon and choose **Activar diagnóstico** (Enab
 | `display_state`, `session_lock`, `power_suspend`, `power_resume` | Screen, session lock, and actual sleep/resume events. |
 | `screen_policy`, `lock_policy`, `output_policy`, `protection`, `effective_interval_s` | Display, lock, and route changes; protection state and effective interval. |
 | `default_output_known`, `selected_is_default` | Whether routing was readable and matches the saved output. Device identifiers are not logged. |
-| `pulse_deferred`, `qualifying_audio_utc` | Deferral due to useful audio and the last qualifying observation. |
+| `keepalive_state`, `keepalive_played_ms`, `keepalive_digital_level_pct`, `keepalive_path_gain`, `keepalive_underruns` | Continuous-signal state, audio Windows consumed, digital level after compensation, Windows volume gain, and dropouts. `stage=complete_cold` on `pulse_ok` means the pulse carried a lead-in for an idle DAC. |
 | `heartbeat` | A 30-second summary of audio, screen state, effective interval, and worker state. |
 
-The window shows **Audio observado hace mm:ss** (Audio observed mm:ss ago). The saved output’s meter is sampled every 100 ms without opening a playback stream or recording audio. History starts when the app opens and resets when the selected output changes. Sufficiently strong, fresh observations can postpone automatic pulses only in normal mode.
+The window shows **Audio observado hace mm:ss** (Audio observed mm:ss ago). The saved output’s meter is sampled every 100 ms without opening a playback stream or recording audio. History starts when the app opens and resets when the selected output changes. With the continuous signal on, the counter stays near 00:00: the meter is seeing that signal.
 
 There are limits: the [Windows meter](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nn-endpointvolume-iaudiometerinformation) operates before endpoint volume/mute, and software meters cannot observe exclusive streams. Each [reading covers one device period](https://learn.microsoft.com/en-us/windows/win32/api/endpointvolume/nf-endpointvolume-iaudiometerinformation-getpeakvalue), so sampling can miss brief sounds. Unknown or stale observations are not reported as confirmed silence. `pulse_ok` also cannot prove analog output over RCA or that the speakers reset their timer.
 
@@ -119,7 +139,7 @@ Reports store timing, state, and level metadata, not audio, computer names, exec
 
 Playback now runs in a hidden, bounded copy of the same executable. A blocked driver call reaches a global deadline of pulse duration plus 10 seconds; the helper is terminated and the app retries. Initial buffer loading, drain verification, and start-to-start intervals are retained. Last-pulse history resets on output changes; pause, exit, and signal changes cancel old attempts.
 
-The [v0.3.1 review](docs/REVIEW-2026-11-03.md) covers the headphones correction and tests; the [earlier review](docs/REVIEW-2026-10-18.md) covers audio isolation and diagnostics (Spanish). The never-returning audio call test uses a simulated renderer; physical SMSL SU-1 testing with the screen off remains necessary.
+The [v0.4.0 review](docs/REVIEW-2026-11-14.md) explains the continuous signal and how it was verified. The [v0.3.1 review](docs/REVIEW-2026-11-03.md) covers the headphones correction and tests; the [earlier review](docs/REVIEW-2026-10-18.md) covers audio isolation and diagnostics (Spanish). The never-returning audio call test uses a simulated renderer; physical SMSL SU-1 testing with the screen off remains necessary.
 
 ## Start with Windows
 

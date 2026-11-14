@@ -699,7 +699,7 @@ void PaintWindow(HWND window) {
     panel({18, 82, 402, 143}, RGB(17, 20, 21), 17);
     HBRUSH dot = CreateSolidBrush(g_config.enabled && !g_config.endpointId.empty()
                                  ? RGB(241, 204, 73) : RGB(100, 108, 110));
-    RECT dotRect = ScaleRect({32, 105, 41, 114});
+    RECT dotRect = ScaleRect({32, 97, 41, 106});
     FillRect(dc, &dotRect, dot);
     DeleteObject(dot);
     label(L"SALIDA DE AUDIO", {18, 153, 402, 173}, g_fontSmall, muted);

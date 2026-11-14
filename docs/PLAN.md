@@ -1,6 +1,6 @@
 # Plan inicial de KRK Wakeup
 
-Fecha de investigación inicial: 2026-10-06. Estado actualizado: v0.3.1 amplía la protección de hasta cinco minutos a audífonos/otra salida predeterminada, bloqueo, pantalla apagada/atenuada y datos desconocidos; dentro de ese modo el medidor no aplaza pulsos. Los intervalos de 20 minutos fallaron y los de 18/15 minutos presentaron apagados intermitentes; v0.3.0 también recibió un reporte al usar audífonos. La causa física sigue sin confirmarse. Véase la [revisión de v0.3.1](REVIEW-2026-11-03.md).
+Fecha de investigación inicial: 2026-10-06. Estado actualizado: v0.4.0 añade una señal continua en un stream que queda abierto, espera para DAC inactivo, compensación del volumen de Windows y elimina el aplazamiento por audio observado; véase la [revisión de v0.4.0](REVIEW-2026-11-14.md). Estado anterior: v0.3.1 amplía la protección de hasta cinco minutos a audífonos/otra salida predeterminada, bloqueo, pantalla apagada/atenuada y datos desconocidos; dentro de ese modo el medidor no aplaza pulsos. Los intervalos de 20 minutos fallaron y los de 18/15 minutos presentaron apagados intermitentes; v0.3.0 también recibió un reporte al usar audífonos. La causa física sigue sin confirmarse. Véase la [revisión de v0.3.1](REVIEW-2026-11-03.md).
 
 ## Objetivo
 
