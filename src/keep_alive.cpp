@@ -8,6 +8,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -33,7 +34,11 @@ std::string Hex(HRESULT hr) {
     return text;
 }
 
-KeepAliveState FailureState(HRESULT hr) {
+KeepAliveState FailureState(HRESULT hr, const char* stage) {
+    // Whatever the reason, an output that cannot be opened by its saved
+    // identifier is not there: unplugged, disabled, or never existed.
+    if (std::strcmp(stage, "keepalive_device") == 0 ||
+        std::strcmp(stage, "keepalive_device_state") == 0) return KeepAliveState::Unavailable;
     if (hr == AUDCLNT_E_DEVICE_IN_USE || hr == AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED)
         return KeepAliveState::InUse;
     if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == E_NOTFOUND ||
@@ -99,11 +104,11 @@ struct KeepAliveStream::Impl {
         }
 
         void Failed(uint64_t expected, HRESULT hr, const char* stage) {
-            const KeepAliveState state = FailureState(hr);
+            const KeepAliveState failure = FailureState(hr, stage);
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 if (revision != expected || stop) return;
-                snapshot.state = state;
+                snapshot.state = failure;
                 snapshot.stage = stage;
                 snapshot.error = hr;
                 snapshot.runningSinceTickMs = 0;
@@ -113,7 +118,7 @@ struct KeepAliveStream::Impl {
                 ++snapshot.failures;
                 snapshot.lastProgressTickMs = GetTickCount64();
             }
-            LogOnce(std::string("state=") + KeepAliveStateName(state) + " stage=" + stage +
+            LogOnce(std::string("state=") + KeepAliveStateName(failure) + " stage=" + stage +
                     " hr=" + Hex(hr));
         }
 
