@@ -75,6 +75,7 @@ Diagnostics=1
         $script:window = [RecoveryTestWindow]::FindWindow('KRKWakeupSettings', 'KRK Wakeup')
         $script:window -ne [IntPtr]::Zero -and (Read-Log) -match 'event=pulse_error'
     } 'initial unavailable-device attempt'
+    Wait-Until { (Read-Log) -match 'event=keepalive_state state=unavailable stage=keepalive_device' } 'continuous stream reports the missing output'
     foreach ($state in @(0, 2, 1, 0)) {
         Send-DisplayState $state
         $effective = 300 # Unknown routing on the offline fixture always protects.
@@ -115,6 +116,7 @@ Diagnostics=1
         throw 'Resume unexpectedly enabled a paused worker'
     }
     $manualAttempts = ([regex]::Matches((Read-Log), 'event=pulse_start kind=test\b')).Count
+    Wait-Until { (Read-Log) -match 'event=keepalive_state state=off' } 'pausing stops the continuous stream'
     Send-AppMessage 0x0111 203 # Manual pulse still works while paused/screen-off
     Wait-Until { ([regex]::Matches((Read-Log), 'event=pulse_start kind=test\b')).Count -gt $manualAttempts } 'manual pulse bypass'
     Write-Host 'Screen interval policy, lock diagnostics, hidden retries, resume recovery, pause, and manual pulse checks passed.'

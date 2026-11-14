@@ -15,7 +15,7 @@
 namespace {
 constexpr wchar_t kHelperArgument[] = L"--audio-helper";
 constexpr uint32_t kProtocolMagic = 0x4B524B41;  // KRKA
-constexpr uint32_t kProtocolVersion = 1;
+constexpr uint32_t kProtocolVersion = 2;
 constexpr size_t kMaxEndpointChars = 4096;
 constexpr DWORD kPipeBytes = 16384;
 constexpr ULONGLONG kRendererOverheadMs = 10000;
@@ -53,6 +53,7 @@ struct RequestHeader {
     uint32_t durationMs;
     uint32_t frequencyHz;
     uint32_t levelPercent;
+    uint32_t flags;
 };
 
 struct Reply {
@@ -62,7 +63,7 @@ struct Reply {
     int32_t error = E_UNEXPECTED;
     char stage[64] = {};
 };
-static_assert(sizeof(RequestHeader) == 24, "The pipe protocol must have a fixed layout");
+static_assert(sizeof(RequestHeader) == 28, "The pipe protocol must have a fixed layout");
 static_assert(sizeof(Reply) == 80, "The pipe protocol must have a fixed layout");
 static_assert(sizeof(wchar_t) == 2, "The helper protocol uses Windows UTF-16");
 
@@ -76,12 +77,12 @@ PulseResult Win32Failure(const char* stage) {
 }
 
 bool ValidArguments(const std::wstring& endpointId, unsigned durationMs,
-                    unsigned frequencyHz, unsigned levelPercent) {
+                    unsigned frequencyHz, unsigned levelPercent, unsigned flags) {
     return !endpointId.empty() && endpointId.size() <= kMaxEndpointChars &&
         endpointId.find(L'\0') == std::wstring::npos &&
         durationMs >= 100 && durationMs <= 5000 &&
         frequencyHz >= 10 && frequencyHz <= 15000 &&
-        levelPercent >= 1 && levelPercent <= 10;
+        levelPercent >= 1 && levelPercent <= 10 && !(flags & ~kPulseKnownFlags);
 }
 
 bool MakePipe(Handle& read, Handle& write) {
@@ -185,11 +186,13 @@ int RunHelper(HANDLE input, HANDLE output) {
     std::wstring endpoint(header.endpointChars, L'\0');
     if (!ReadExactly(request.Get(), endpoint.data(),
                      static_cast<DWORD>(endpoint.size() * sizeof(wchar_t))) ||
-        !ValidArguments(endpoint, header.durationMs, header.frequencyHz, header.levelPercent)) return 2;
+        !ValidArguments(endpoint, header.durationMs, header.frequencyHz, header.levelPercent,
+                        header.flags)) return 2;
     request.Reset();
     PulseResult result;
     try {
-        result = RenderPulse(endpoint, header.durationMs, header.frequencyHz, header.levelPercent);
+        result = RenderPulse(endpoint, header.durationMs, header.frequencyHz, header.levelPercent,
+                             header.flags);
     } catch (...) {
         result = Failure(E_UNEXPECTED, "renderer_exception");
     }
@@ -213,8 +216,8 @@ int RunHelper(HANDLE input, HANDLE output) {
 
 PulseResult RenderPulseIsolated(const std::wstring& endpointId, unsigned durationMs,
                                 unsigned frequencyHz, unsigned levelPercent,
-                                const std::function<bool()>& cancelled) {
-    if (!ValidArguments(endpointId, durationMs, frequencyHz, levelPercent))
+                                const std::function<bool()>& cancelled, unsigned flags) {
+    if (!ValidArguments(endpointId, durationMs, frequencyHz, levelPercent, flags))
         return Failure(E_INVALIDARG, "renderer_request");
     if (cancelled && cancelled()) return Failure(HRESULT_FROM_WIN32(ERROR_CANCELLED), "cancelled");
     const ULONGLONG deadline = GetTickCount64() + durationMs + kRendererOverheadMs;
@@ -227,7 +230,7 @@ PulseResult RenderPulseIsolated(const std::wstring& endpointId, unsigned duratio
         return Win32Failure("renderer_inherit");
 
     RequestHeader header = {kProtocolMagic, kProtocolVersion,
-        static_cast<uint32_t>(endpointId.size()), durationMs, frequencyHz, levelPercent};
+        static_cast<uint32_t>(endpointId.size()), durationMs, frequencyHz, levelPercent, flags};
     std::vector<BYTE> request(sizeof(header) + endpointId.size() * sizeof(wchar_t));
     std::memcpy(request.data(), &header, sizeof(header));
     std::memcpy(request.data() + sizeof(header), endpointId.data(),

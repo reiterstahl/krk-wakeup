@@ -9,7 +9,7 @@
 // at least every 100 ms while the helper is running.
 PulseResult RenderPulseIsolated(const std::wstring& endpointId, unsigned durationMs,
                                 unsigned frequencyHz, unsigned levelPercent,
-                                const std::function<bool()>& cancelled);
+                                const std::function<bool()>& cancelled, unsigned flags = 0);
 
 // Call before creating the single-instance mutex, logger, COM apartment or UI.
 // commandLine is wWinMain's command line, without the executable name.

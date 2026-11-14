@@ -48,6 +48,15 @@ jobs:
           name: krk-wakeup-ui-capture
           path: capture/*.png
           if-no-files-found: error
+      # Last, so that everything above still runs without an audio device.
+      - name: Install a virtual sound card
+        uses: LABSN/sound-ci-helpers@e9d6ba52163a3283714a68412036ddf33f78d49c
+      - name: Test playback on a real Windows output
+        timeout-minutes: 3
+        shell: pwsh
+        env:
+          KRK_AUDIO_TEST: '1'
+        run: ./build/Release/real-audio-tests.exe
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:

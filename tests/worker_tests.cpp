@@ -23,7 +23,7 @@ void Wait(Predicate predicate, const char* description) {
 // A simulated renderer lets the actual threaded scheduler run without any
 // Windows audio device, default-device changes, UI timer, or speaker hardware.
 PulseResult RenderPulseIsolated(const std::wstring& endpointId, unsigned, unsigned, unsigned,
-                                const std::function<bool()>& cancelled) {
+                                const std::function<bool()>& cancelled, unsigned) {
     if (endpointId != L"saved-DAC") wrongDestination = true;
     ++attempts;
     const bool stopped = cancelled();

@@ -2,6 +2,7 @@
 #include "audio_activity.hpp"
 #include "audio_process.hpp"
 #include "diagnostics.hpp"
+#include "keep_alive.hpp"
 #include "pulse_worker.hpp"
 
 #include <windows.h>
@@ -57,6 +58,9 @@ constexpr int kStatus = 111;
 constexpr int kAdvanced = 112;
 constexpr int kTone = 113;
 constexpr int kActivity = 114;
+constexpr int kKeepAlive = 115;
+constexpr int kKeepFrequency = 116;
+constexpr int kKeepLevel = 117;
 constexpr int kMenuOpen = 201;
 constexpr int kMenuToggle = 202;
 constexpr int kMenuTest = 203;
@@ -74,6 +78,7 @@ HWND g_window = nullptr;
 Config g_config;
 std::unique_ptr<PulseWorker> g_worker;
 std::unique_ptr<AudioActivityMonitor> g_activity;
+std::unique_ptr<KeepAliveStream> g_keepAlive;
 std::wstring g_settingsPath;
 std::vector<Endpoint> g_endpoints;
 UINT g_taskbarCreated = 0;
@@ -86,6 +91,8 @@ HBRUSH g_brushPanel = nullptr;
 HBRUSH g_brushInput = nullptr;
 bool g_expanded = false;
 bool g_uiStartup = false;
+bool g_uiKeepAlive = true;
+KeepAliveState g_lastKeepAliveState = KeepAliveState::Off;
 bool g_sessionNotifications = false;
 HPOWERNOTIFY g_displayNotification = nullptr;
 bool g_systemSuspended = false;
@@ -96,7 +103,7 @@ Clock::time_point g_lastHeartbeat = Clock::now();
 void SetExpanded(bool expanded);
 constexpr int kClientWidth = 420;
 constexpr int kClientCompactHeight = 410;
-constexpr int kClientExpandedHeight = 646;
+constexpr int kClientExpandedHeight = 760;
 UINT g_dpi = 96;
 struct ControlLayout { int id; RECT rect; };
 std::vector<ControlLayout> g_controlLayouts;
@@ -130,6 +137,19 @@ void LayoutControls() {
     }
 }
 
+
+// The stream follows the saved settings: off while paused, with no output
+// selected, or while Windows is suspended.
+void ApplyKeepAlive() {
+    if (!g_keepAlive) return;
+    KeepAliveConfig config;
+    config.endpointId = g_config.endpointId;
+    config.enabled = g_config.enabled && g_config.keepAlive && !g_config.endpointId.empty();
+    config.frequencyHz = g_config.keepAliveFrequencyHz;
+    config.levelPercent = g_config.keepAliveLevelPercent;
+    config.compensateVolume = g_config.compensateVolume;
+    g_keepAlive->Configure(config);
+}
 
 std::wstring ReadText(HWND control) {
     const int size = GetWindowTextLengthW(control);
@@ -199,6 +219,10 @@ void LoadConfig() {
     g_config.enabled = ReadNumber(L"Enabled", 1, 0, 1) == 1;
     g_config.startup = ReadNumber(L"Startup", 0, 0, 1) == 1;
     g_config.diagnostics = ReadNumber(L"Diagnostics", 0, 0, 1) == 1;
+    g_config.keepAlive = ReadNumber(L"KeepAlive", 1, 0, 1) == 1;
+    g_config.keepAliveFrequencyHz = ReadNumber(L"KeepAliveFrequencyHz", 20, 10, 15000);
+    g_config.keepAliveLevelPercent = ReadNumber(L"KeepAliveLevelPercent", 2, 0, 10);
+    g_config.compensateVolume = ReadNumber(L"CompensateVolume", 1, 0, 1) == 1;
 }
 
 bool SaveConfig() {
@@ -214,7 +238,11 @@ bool SaveConfig() {
            write(L"LevelPercent", std::to_wstring(g_config.levelPercent)) &&
            write(L"Enabled", g_config.enabled ? L"1" : L"0") &&
            write(L"Startup", g_config.startup ? L"1" : L"0") &&
-           write(L"Diagnostics", g_config.diagnostics ? L"1" : L"0");
+           write(L"Diagnostics", g_config.diagnostics ? L"1" : L"0") &&
+           write(L"KeepAlive", g_config.keepAlive ? L"1" : L"0") &&
+           write(L"KeepAliveFrequencyHz", std::to_wstring(g_config.keepAliveFrequencyHz)) &&
+           write(L"KeepAliveLevelPercent", std::to_wstring(g_config.keepAliveLevelPercent)) &&
+           write(L"CompensateVolume", g_config.compensateVolume ? L"1" : L"0");
 }
 
 std::wstring StartupCommand() {
@@ -321,7 +349,11 @@ void UpdateFields() {
     SetWindowTextW(GetDlgItem(g_window, kDuration), std::to_wstring(g_config.durationMs).c_str());
     SetWindowTextW(GetDlgItem(g_window, kFrequency), std::to_wstring(g_config.frequencyHz).c_str());
     SetWindowTextW(GetDlgItem(g_window, kLevel), std::to_wstring(g_config.levelPercent).c_str());
+    SetWindowTextW(GetDlgItem(g_window, kKeepFrequency), std::to_wstring(g_config.keepAliveFrequencyHz).c_str());
+    SetWindowTextW(GetDlgItem(g_window, kKeepLevel), std::to_wstring(g_config.keepAliveLevelPercent).c_str());
     g_uiStartup = g_config.startup && IsStartupRegistered();
+    g_uiKeepAlive = g_config.keepAlive;
+    InvalidateRect(GetDlgItem(g_window, kKeepAlive), nullptr, TRUE);
     InvalidateRect(GetDlgItem(g_window, kEnabled), nullptr, TRUE);
     InvalidateRect(GetDlgItem(g_window, kStartup), nullptr, TRUE);
 }
@@ -371,6 +403,17 @@ bool SaveFromWindow(bool manualTestFollows = false) {
         ShowInputError(L"El nivel digital debe estar entre 1 % y 10 %.");
         return false;
     }
+    if (!ParseUnsigned(ReadText(GetDlgItem(g_window, kKeepFrequency)), candidate.keepAliveFrequencyHz) ||
+        candidate.keepAliveFrequencyHz < 10 || candidate.keepAliveFrequencyHz > 15000) {
+        ShowInputError(L"La frecuencia continua debe estar entre 10 y 15000 Hz.");
+        return false;
+    }
+    if (!ParseUnsigned(ReadText(GetDlgItem(g_window, kKeepLevel)), candidate.keepAliveLevelPercent) ||
+        candidate.keepAliveLevelPercent > 10) {
+        ShowInputError(L"El nivel continuo debe estar entre 0 % y 10 %. Con 0 solo se mantiene abierto el DAC.");
+        return false;
+    }
+    candidate.keepAlive = g_uiKeepAlive;
     candidate.enabled = g_config.enabled;
     candidate.startup = g_uiStartup;
     if (!SetStartup(candidate.startup)) {
@@ -387,6 +430,7 @@ bool SaveFromWindow(bool manualTestFollows = false) {
     }
     if (g_activity) g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty() && !g_systemSuspended, g_config.levelPercent);
     g_worker->Configure(g_config, manualTestFollows);
+    ApplyKeepAlive();
     InvalidateRect(g_window, nullptr, FALSE);
     if (candidate.intervalSeconds >= candidate.idleSeconds)
         MessageBoxW(g_window, L"El intervalo iguala o supera el reposo estimado. Los parlantes podrían apagarse antes del siguiente pulso.",
@@ -448,9 +492,53 @@ std::string ActivitySummary(const AudioActivitySnapshot& audio, uint64_t tick) {
         " endpoint_volume_pct=" + (audio.endpointVolumeKnown ? std::to_string(audio.endpointVolume * 100) : "unknown");
 }
 
+std::string KeepAliveSummary(const KeepAliveSnapshot& keep, uint64_t tick) {
+    char error[24];
+    std::snprintf(error, sizeof(error), "0x%08lX", static_cast<unsigned long>(keep.error));
+    const bool running = keep.runningSinceTickMs != 0;
+    return std::string("keepalive_state=") + KeepAliveStateName(keep.state) + " keepalive_stage=" + keep.stage +
+        " keepalive_hr=" + error +
+        " keepalive_running_ms=" + (running ? std::to_string(tick - keep.runningSinceTickMs) : "0") +
+        " keepalive_played_ms=" + (keep.playedKnown ? std::to_string(keep.playedMs) : "unknown") +
+        " keepalive_digital_level_pct=" + std::to_string(keep.digitalLevel * 100) +
+        " keepalive_path_gain=" + (keep.pathGainKnown ? std::to_string(keep.pathGain) : "unknown") +
+        " keepalive_limited=" + std::to_string(keep.limited) +
+        " keepalive_underruns=" + std::to_string(keep.underruns) +
+        " keepalive_connections=" + std::to_string(keep.connections) +
+        " keepalive_failures=" + std::to_string(keep.failures);
+}
+
+// The applied state in words, so it can be checked without opening a log.
+std::wstring KeepAliveText(const KeepAliveSnapshot& keep) {
+    if (g_config.endpointId.empty()) return L"";
+    if (!g_config.keepAlive) return L"Señal continua: desactivada";
+    if (!g_config.enabled) return L"Señal continua: en pausa";
+    switch (keep.state) {
+    case KeepAliveState::Running: {
+        std::wstring text = L"Señal continua: activa · " + std::to_wstring(keep.frequencyHz) + L" Hz · " +
+            std::to_wstring(keep.levelPercent) + L" %";
+        if (keep.limited) text += L" · sube el volumen de Windows";
+        return text;
+    }
+    case KeepAliveState::Muted: return L"Señal continua: silenciada en Windows";
+    case KeepAliveState::Unavailable: return L"Señal continua: salida no disponible";
+    case KeepAliveState::InUse: return L"Señal continua: salida en uso exclusivo";
+    case KeepAliveState::Stalled: return L"Señal continua: sin respuesta, reintentando";
+    case KeepAliveState::Error: {
+        wchar_t text[64];
+        swprintf_s(text, L"Señal continua: error 0x%08lX", static_cast<unsigned long>(keep.error));
+        return text;
+    }
+    case KeepAliveState::Connecting: return L"Señal continua: conectando…";
+    case KeepAliveState::Off: break;
+    }
+    return L"Señal continua: detenida";
+}
+
 void UpdateStatus() {
     if (!g_worker) return;
     const Status status = g_worker->Snapshot();
+    const KeepAliveSnapshot keep = g_keepAlive ? g_keepAlive->Snapshot() : KeepAliveSnapshot{};
     const auto audio = g_activity ? g_activity->Snapshot() : AudioActivitySnapshot{};
     const uint64_t tick = GetTickCount64();
     std::wstring activity;
@@ -465,8 +553,10 @@ void UpdateStatus() {
     } else activity = L"Audio observado: aún sin señal detectada";
     if (status.protectionRequired) activity += L" · protección: " + FormatTime(status.effectiveIntervalSeconds);
     SetWindowTextW(GetDlgItem(g_window, kActivity), activity.c_str());
-    if (audio.state != g_lastActivityState || tick - g_lastActivityReport >= 10000) {
-        LogEvent("endpoint_observation", ActivitySummary(audio, tick));
+    if (audio.state != g_lastActivityState || keep.state != g_lastKeepAliveState ||
+        tick - g_lastActivityReport >= 10000) {
+        LogEvent("endpoint_observation", ActivitySummary(audio, tick) + " " + KeepAliveSummary(keep, tick));
+        g_lastKeepAliveState = keep.state;
         g_lastActivityState = audio.state;
         g_lastActivityReport = tick;
     }
@@ -487,7 +577,7 @@ void UpdateStatus() {
             " next_in_s=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(status.next - now).count()) +
             " last_pulse_utc=" + (status.hasSuccess ? status.lastSuccessUtc : "unknown") +
             " last_pulse_age_ms=" + (status.hasSuccess ? std::to_string(tick - status.lastSuccessTickMs) : "unknown") +
-            " " + ActivitySummary(audio, tick));
+            " " + ActivitySummary(audio, tick) + " " + KeepAliveSummary(keep, tick));
         g_lastHeartbeat = now;
     }
     if (status.hasNext && g_config.enabled) {
@@ -495,7 +585,10 @@ void UpdateStatus() {
         if (remaining < 0) remaining = 0;
         message += L"  Próximo: " + FormatTime(static_cast<unsigned>(remaining));
     }
-    SetWindowTextW(GetDlgItem(g_window, kStatus), message.c_str());
+    const std::wstring keepText = KeepAliveText(keep);
+    SetWindowTextW(GetDlgItem(g_window, kStatus),
+                   (keepText.empty() ? message : message + L"\r\n" + keepText).c_str());
+    if (!keepText.empty()) message += L" — " + keepText;
     NOTIFYICONDATAW data = {};
     data.cbSize = sizeof(data);
     data.hWnd = g_window;
@@ -534,6 +627,7 @@ void ToggleEnabled() {
     g_config.enabled = !g_config.enabled;
     if (!SaveConfig()) ShowInputError(L"No se pudo guardar la configuración.");
     g_worker->Configure(g_config);
+    ApplyKeepAlive();
     InvalidateRect(GetDlgItem(g_window, kEnabled), nullptr, TRUE);
     InvalidateRect(g_window, nullptr, FALSE);
     UpdateStatus();
@@ -623,10 +717,13 @@ void PaintWindow(HWND window) {
         label(L"AJUSTES DE SEÑAL", {18, 420, 402, 440}, g_fontSmall, muted);
         label(L"Reposo estimado (mm:ss)", {18, 446, 285, 478}, g_fontBody, text);
         label(L"Duración del pulso (ms)", {18, 484, 285, 516}, g_fontBody, text);
-        label(L"Frecuencia (Hz)", {18, 522, 285, 554}, g_fontBody, text);
-        label(L"Nivel digital (%)", {18, 560, 285, 592}, g_fontBody, text);
-        label(L"Iniciar con Windows", {18, 600, 300, 632}, g_fontBody, text);
-        for (int top : {446, 484, 522, 560})
+        label(L"Frecuencia del pulso (Hz)", {18, 522, 285, 554}, g_fontBody, text);
+        label(L"Nivel del pulso (%)", {18, 560, 285, 592}, g_fontBody, text);
+        label(L"Señal continua", {18, 598, 300, 630}, g_fontBody, text);
+        label(L"Frecuencia continua (Hz)", {18, 636, 285, 668}, g_fontBody, text);
+        label(L"Nivel continuo (%)", {18, 674, 285, 706}, g_fontBody, text);
+        label(L"Iniciar con Windows", {18, 714, 300, 746}, g_fontBody, text);
+        for (int top : {446, 484, 522, 560, 636, 674})
             panel({293, top, 402, top + 32}, RGB(19, 22, 23), 9);
     }
     BitBlt(screen, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
@@ -656,6 +753,7 @@ void PaintButton(const DRAWITEMSTRUCT* item) {
     if (id == kEnabled) label = g_config.endpointId.empty() ? L"Sin salida"
                                   : g_config.enabled ? L"Activo" : L"Pausado";
     if (id == kStartup) label = g_uiStartup ? L"Sí" : L"No";
+    if (id == kKeepAlive) label = g_uiKeepAlive ? L"Sí" : L"No";
     RECT area = item->rcItem;
     PaintText(item->hDC, label.c_str(), area, g_fontBody, foreground,
               DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
@@ -732,7 +830,7 @@ LRESULT CALLBACK ComboSubclass(HWND combo, UINT message, WPARAM wparam,
 
 void SetExpanded(bool expanded) {
     g_expanded = expanded;
-    for (const int id : {kIdle, kDuration, kFrequency, kLevel, kStartup})
+    for (const int id : {kIdle, kDuration, kFrequency, kLevel, kKeepAlive, kKeepFrequency, kKeepLevel, kStartup})
         ShowWindow(GetDlgItem(g_window, id), expanded ? SW_SHOW : SW_HIDE);
     SetWindowTextW(GetDlgItem(g_window, kAdvanced),
                    expanded ? L"Menos ajustes" : L"Más ajustes");
@@ -770,7 +868,7 @@ void AddControl(const wchar_t* klass, const wchar_t* title, DWORD style,
 void BuildWindow() {
     AddControl(L"BUTTON", L"Activo", BS_OWNERDRAW | WS_TABSTOP,
                312, 20, 90, 34, kEnabled);
-    AddControl(L"STATIC", L"", SS_LEFT, 48, 94, 338, 38, kStatus);
+    AddControl(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, 48, 90, 346, 46, kStatus);
     AddControl(L"COMBOBOX", L"", CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED |
                CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
                18, 178, 344, 210, kDevice);
@@ -795,8 +893,14 @@ void BuildWindow() {
                301, 527, 94, 22, kFrequency);
     AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
                301, 565, 94, 22, kLevel);
+    AddControl(L"BUTTON", L"Sí", BS_OWNERDRAW | WS_TABSTOP,
+               342, 598, 60, 32, kKeepAlive);
+    AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
+               301, 641, 94, 22, kKeepFrequency);
+    AddControl(L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP,
+               301, 679, 94, 22, kKeepLevel);
     AddControl(L"BUTTON", L"No", BS_OWNERDRAW | WS_TABSTOP,
-               342, 600, 60, 32, kStartup);
+               342, 714, 60, 32, kStartup);
     AddControl(L"STATIC", L"Audio observado: esperando lectura", SS_LEFT | SS_ENDELLIPSIS,
                18, 380, 384, 20, kActivity);
     UpdateFields();
@@ -871,6 +975,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
             LogEvent("power_suspend");
             g_systemSuspended = true;
             if (g_worker) g_worker->Suspend();
+            if (g_keepAlive) g_keepAlive->Suspend();
             if (g_activity) g_activity->Configure(g_config.endpointId, false, g_config.levelPercent);
         }
         if (wparam == PBT_POWERSETTINGCHANGE && lparam) {
@@ -890,6 +995,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
                 g_activity->Resume();
             }
             if (g_worker) g_worker->Resume();
+            if (g_keepAlive) g_keepAlive->Resume();
         }
         return TRUE;
     case WM_WTSSESSION_CHANGE:
@@ -920,6 +1026,10 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         case kStartup:
             g_uiStartup = !g_uiStartup;
             InvalidateRect(GetDlgItem(window, kStartup), nullptr, TRUE);
+            return 0;
+        case kKeepAlive:
+            g_uiKeepAlive = !g_uiKeepAlive;
+            InvalidateRect(GetDlgItem(window, kKeepAlive), nullptr, TRUE);
             return 0;
         case kAdvanced: SetExpanded(!g_expanded); return 0;
         case kSave: SaveFromWindow(); UpdateStatus(); return 0;
@@ -964,6 +1074,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam, LPARA
         LogEvent("app_exit");
         KillTimer(window, kTimerId);
         if (g_worker) g_worker->Stop();
+        g_keepAlive.reset();
         RemoveTrayIcon();
         PostQuitMessage(0);
         return 0;
@@ -1008,6 +1119,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     g_activity = std::make_unique<AudioActivityMonitor>();
     g_activity->Configure(g_config.endpointId, !g_config.endpointId.empty(), g_config.levelPercent);
     g_worker = std::make_unique<PulseWorker>(g_config, [] { return g_activity->Snapshot(); });
+    g_keepAlive = std::make_unique<KeepAliveStream>();
+    ApplyKeepAlive();
     g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     g_icon = LoadIconW(instance, MAKEINTRESOURCEW(101));
     if (!g_icon) g_icon = LoadIconW(nullptr, IDI_APPLICATION);
@@ -1020,6 +1133,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     klass.hbrBackground = g_brushBackground;
     if (!RegisterClassW(&klass)) {
         g_worker.reset();
+        g_keepAlive.reset();
         g_activity.reset();
         CoUninitialize();
         CloseHandle(instanceMutex);
@@ -1038,6 +1152,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
                                   nullptr, nullptr, instance, nullptr);
     if (!window) {
         g_worker.reset();
+        g_keepAlive.reset();
         g_activity.reset();
         CoUninitialize();
         CloseHandle(instanceMutex);
@@ -1063,6 +1178,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         }
     }
     g_worker.reset();
+    g_keepAlive.reset();
     g_activity.reset();
     CoUninitialize();
     CloseHandle(instanceMutex);

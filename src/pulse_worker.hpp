@@ -29,6 +29,12 @@ struct Config {
     bool enabled = true;
     bool startup = false;
     bool diagnostics = false;
+    // Continuous low tone on a stream that stays open (see keep_alive.hpp).
+    bool keepAlive = true;
+    unsigned keepAliveFrequencyHz = 20;
+    unsigned keepAliveLevelPercent = 2;
+    // Offset the Windows volume so the level leaving the DAC stays constant.
+    bool compensateVolume = true;
 };
 
 inline std::string ConfigSummary(const Config& config) {
@@ -38,6 +44,10 @@ inline std::string ConfigSummary(const Config& config) {
         " duration_ms=" + std::to_string(config.durationMs) +
         " frequency_hz=" + std::to_string(config.frequencyHz) +
         " level_pct=" + std::to_string(config.levelPercent) +
+        " keepalive=" + std::to_string(config.keepAlive) +
+        " keepalive_hz=" + std::to_string(config.keepAliveFrequencyHz) +
+        " keepalive_level_pct=" + std::to_string(config.keepAliveLevelPercent) +
+        " compensate_volume=" + std::to_string(config.compensateVolume) +
         " diagnostics=" + std::to_string(config.diagnostics);
 }
 
@@ -94,8 +104,6 @@ public:
             hasSuccess_ = false;
             lastSuccessTickMs_ = 0;
             lastSuccessUtc_.clear();
-            hasOwnAttempt_ = false;
-            lastOwnAttemptEndedTickMs_ = 0;
         }
         if (renderChanged) ++renderGeneration_;
         config_ = config;
@@ -220,24 +228,13 @@ private:
             }
             if (stopping_) break;
             if (testPending_ == TestKind::None) {
-                const auto now = Clock::now();
-                const auto baseline = !hasSuccess_ || forcePulse_ || retryPending_ ? next_
+                // Pulses are never postponed because other audio was observed.
+                // The meter reads before the Windows volume and cannot tell a
+                // brief notification sound from signal the speakers noticed.
+                const auto due = !hasSuccess_ || forcePulse_ || retryPending_ ? next_
                     : PulseSchedule::AfterSuccess(lastPulseStarted_, lastPulseCompleted_, Interval());
-                const bool reliable = (audio.state == AudioActivityState::Active || audio.state == AudioActivityState::Quiet) &&
-                    audio.coverage != AudioMeterCoverage::Unknown &&
-                    audio.endpointMuteKnown && !audio.endpointMuted && audio.endpointVolumeKnown && audio.endpointVolume > 0.0f;
-                const auto decision = PulseSchedule::AutomaticDue(now, baseline, Interval(), GetTickCount64(),
-                    reliable, audio.hasQualifyingActivity, audio.lastQualifyingActivityTickMs, audio.lastPollTickMs,
-                    hasOwnAttempt_, lastOwnAttemptEndedTickMs_, ProtectionRequired());
-                if (decision.due > now) {
-                    next_ = decision.due;
-                    if (decision.deferredByAudio) {
-                        forcePulse_ = false;
-                        retryPending_ = false;
-                        status_ = L"Hay audio; pulso aplazado.";
-                        LogEvent("pulse_deferred", "reason=observed_audio effective_interval_s=" + std::to_string(Interval()) +
-                            " next_in_ms=" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(next_ - now).count()));
-                    }
+                if (due > Clock::now()) {
+                    next_ = due;
                     continue;
                 }
             }
@@ -269,16 +266,13 @@ private:
                 return stopping_ || renderGeneration_ != renderGeneration;
             };
             const PulseResult result = test == TestKind::Tone
-                ? RenderPulseIsolated(current.endpointId, 3000, 440, 5, cancelled)
+                ? RenderPulseIsolated(current.endpointId, 3000, 440, 5, cancelled, 0)
                 : RenderPulseIsolated(current.endpointId, current.durationMs,
-                                      current.frequencyHz, current.levelPercent, cancelled);
+                                      current.frequencyHz, current.levelPercent, cancelled,
+                                      current.compensateVolume ? kPulseCompensateVolume : 0u);
             lock.lock();
             busy_ = false;
             const auto completed = Clock::now();
-            if (current.endpointId == config_.endpointId) {
-                hasOwnAttempt_ = true;
-                lastOwnAttemptEndedTickMs_ = GetTickCount64();
-            }
             char errorCode[24];
             std::snprintf(errorCode, sizeof(errorCode), "0x%08lX", static_cast<unsigned long>(result.error));
             LogEvent(result.success ? "pulse_ok" : "pulse_error",
@@ -334,8 +328,6 @@ private:
     bool suspended_ = false;
     bool busy_ = false;
     bool hasSuccess_ = false;
-    bool hasOwnAttempt_ = false;
-    uint64_t lastOwnAttemptEndedTickMs_ = 0;
     bool forcePulse_ = true;
     bool retryPending_ = false;
     int displayState_ = -1;

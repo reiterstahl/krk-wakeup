@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(KRKWakeup VERSION 0.3.1 LANGUAGES CXX RC)
+project(KRKWakeup VERSION 0.4.0 LANGUAGES CXX RC)
 
 if(NOT WIN32)
     message(FATAL_ERROR "KRK Wakeup requires Windows")
@@ -15,9 +15,13 @@ add_executable(krk-wakeup WIN32
     src/audio_activity.hpp
     src/diagnostics.cpp
     src/diagnostics.hpp
+    src/keep_alive.cpp
+    src/keep_alive.hpp
     src/playback.hpp
     src/pulse_schedule.hpp
     src/pulse_worker.hpp
+    src/signal.hpp
+    src/wasapi_util.hpp
     app.rc
 )
 target_compile_features(krk-wakeup PRIVATE cxx_std_17)
@@ -39,7 +43,11 @@ if(BUILD_TESTING)
     target_link_libraries(audio-process-tests PRIVATE shell32)
     add_executable(worker-tests tests/worker_tests.cpp)
     add_executable(diagnostics-tests tests/diagnostics_tests.cpp src/diagnostics.cpp)
-    foreach(test_target IN ITEMS audio-process-tests diagnostics-tests worker-tests)
+    # Plays through a real output. It does nothing unless KRK_AUDIO_TEST=1.
+    add_executable(real-audio-tests tests/real_audio_tests.cpp src/audio.cpp src/keep_alive.cpp
+                   src/diagnostics.cpp)
+    target_link_libraries(real-audio-tests PRIVATE ole32 uuid)
+    foreach(test_target IN ITEMS audio-process-tests diagnostics-tests worker-tests real-audio-tests)
         target_compile_features(${test_target} PRIVATE cxx_std_17)
         target_include_directories(${test_target} PRIVATE src)
         target_compile_definitions(${test_target} PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
@@ -52,6 +60,8 @@ if(BUILD_TESTING)
     set_tests_properties(isolated-audio-recovery PROPERTIES TIMEOUT 35)
     add_test(NAME worker-routing-and-protection COMMAND worker-tests)
     set_tests_properties(worker-routing-and-protection PROPERTIES TIMEOUT 35)
+    add_test(NAME real-output-stream COMMAND real-audio-tests)
+    set_tests_properties(real-output-stream PROPERTIES TIMEOUT 90)
     add_test(NAME optional-instance-diagnostics COMMAND diagnostics-tests)
     set_tests_properties(optional-instance-diagnostics PROPERTIES TIMEOUT 20)
 endif()

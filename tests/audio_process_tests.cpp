@@ -58,10 +58,11 @@ public:
 // and IPC implementation can therefore be exercised without an audio device or
 // any production-only fake-device switches.
 PulseResult RenderPulse(const std::wstring& endpointId, unsigned durationMs,
-                        unsigned frequencyHz, unsigned levelPercent) {
-    if (durationMs != 100 || frequencyHz != 80 || levelPercent != 1)
+                        unsigned frequencyHz, unsigned levelPercent, unsigned flags) {
+    if (durationMs != 100 || frequencyHz != 80 || levelPercent != 1 ||
+        (endpointId == L"flags") != (flags == kPulseCompensateVolume))
         return {false, false, E_INVALIDARG, "stub_arguments", false};
-    if (endpointId == kEndpoint || endpointId == std::wstring(4096, L'x'))
+    if (endpointId == kEndpoint || endpointId == L"flags" || endpointId == std::wstring(4096, L'x'))
         return {true, false, S_OK, "complete", false};
     if (endpointId == L"failure")
         return {false, true, HRESULT_FROM_WIN32(ERROR_DEVICE_NOT_CONNECTED), "device_state", false};
@@ -98,6 +99,10 @@ int main() {
     Check(result.success && result.error == S_OK && result.stage == "complete",
           "Helper must preserve the selected endpoint and numeric arguments");
     Check(!HasLiveHelpers(), "Successful helper must be reaped");
+    result = RenderPulseIsolated(L"flags", 100, 80, 1, neverCancel, kPulseCompensateVolume);
+    Check(result.success, "Helper must receive the volume-compensation flag");
+    result = RenderPulseIsolated(kEndpoint, 100, 80, 1, neverCancel, 0x80);
+    Check(!result.success && result.stage == "renderer_request", "Unknown flags must be rejected");
     result = RenderPulseIsolated(std::wstring(4096, L'x'), 100, 80, 1, neverCancel);
     Check(result.success, "A maximum-length endpoint must fit the request pipe without truncation");
     result = RenderPulseIsolated(L"failure", 100, 80, 1, neverCancel);

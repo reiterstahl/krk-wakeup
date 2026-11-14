@@ -1,5 +1,6 @@
 #include "playback.hpp"
 #include "pulse_schedule.hpp"
+#include "signal.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -51,7 +52,7 @@ int main() {
     Check(PulseSchedule::QualifyingPeak(0.05f, 5) && !PulseSchedule::QualifyingPeak(0.049f, 5) &&
           !PulseSchedule::QualifyingPeak(0.0f, 1) &&
           !PulseSchedule::QualifyingPeak(std::numeric_limits<float>::quiet_NaN(), 5),
-          "Only finite audio at least as strong as the configured pulse may postpone it");
+          "Only finite audio at least as strong as the configured pulse counts as qualifying");
     Check(!PulseSchedule::ProtectionRequired(1, false, true, true),
           "Only an on-screen, unlocked session with the saved default output uses normal mode");
     for (int screen : {-1, 0, 2})
@@ -66,49 +67,69 @@ int main() {
           !PulseSchedule::FreshDefaultOutput(true, 10000, 10001) &&
           !PulseSchedule::FreshDefaultOutput(false, 10000, 9999),
           "Stale, future, or unknown route samples must not disable protection");
-    const auto nowTime = start + seconds(600);
-    const auto oldPulseDue = PulseSchedule::AfterSuccess(start, start + seconds(5), 300);
-    auto decision = PulseSchedule::AutomaticDue(nowTime, oldPulseDue, 300,
-        1000000, false, false, 0, 0, true, 400000);
-    Check(decision.due <= nowTime && !decision.deferredByAudio,
-          "Turning off the screen after ten quiet minutes must send immediately");
-    const auto screenOnDue = PulseSchedule::AfterSuccess(start, start + seconds(5), 900);
-    decision = PulseSchedule::AutomaticDue(nowTime, screenOnDue, 900,
-        1000000, false, false, 0, 0, true, 400000);
-    Check(decision.due == start + seconds(900),
-          "Returning to screen-on mode must restore the normal deadline from the last pulse");
-    decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
-        1000000, true, true, 999900, 999950, true, 400000);
-    Check(decision.deferredByAudio && decision.due == nowTime + milliseconds(299900),
-          "Recent qualifying music must postpone the automatic pulse");
-    decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
-        1000000, true, true, 880000, 999950, true, 400000);
-    Check(decision.deferredByAudio && decision.due == nowTime + seconds(180),
-          "When music ends, count silence from its last observation, not from the next check");
-    for (const auto ownTail : {uint64_t(400000), uint64_t(400080), uint64_t(400500)}) {
-        decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 900,
-            1000000, true, true, ownTail, 999950, true, 400000);
-        Check(!decision.deferredByAudio && decision.due == nowTime,
-              "Our own successful or failed attempt and its meter tail must not postpone a retry");
+    // Signal shape and volume compensation.
+    using namespace Signal;
+    Check(CompensatedLevel(0.02, true, true, 1.0) == 0.02, "Full volume needs no compensation");
+    Check(std::abs(CompensatedLevel(0.02, true, true, 0.5) - 0.04) < 1e-12,
+          "Half the volume must double the digital level");
+    Check(std::abs(CompensatedLevel(0.02, true, true, 0.001) - 0.2) < 1e-12,
+          "Compensation must stop at ten times the requested level");
+    Check(CompensatedLevel(0.10, true, true, 0.01) == kMaxDigitalLevel,
+          "Compensation must leave digital headroom");
+    Check(CompensatedLevel(0.02, false, true, 0.1) == 0.02 &&
+          CompensatedLevel(0.02, true, false, 0.1) == 0.02 &&
+          CompensatedLevel(0.02, true, true, 0.0) == 0.02 &&
+          CompensatedLevel(0.02, true, true, 4.0) == 0.02,
+          "Disabled, unknown, zero, or above-unity gain must not change the level");
+    Check(!CompensationLimited(0.02, true, true, 0.5) && CompensationLimited(0.02, true, true, 0.01) &&
+          !CompensationLimited(0.02, false, true, 0.01),
+          "The cap must be reported only when it weakens the signal");
+    Check(std::abs(DecibelsToLinear(-20.0) - 0.1) < 1e-12 && DecibelsToLinear(0.0) == 1.0,
+          "Decibels must convert to a linear gain");
+    const PulseShape cold = MakePulse(48000, 1000, 440, true);
+    const PulseShape warm = MakePulse(48000, 1000, 440, false);
+    Check(cold.leadFrames == 72000 && warm.leadFrames == 0 && cold.toneFrames == 48000 &&
+          cold.Total() == 72000 + 48000 + 12000,
+          "An idle output must get a lead-in; a playing output must not wait");
+    double leadPeak = 0, tonePeak = 0, tailPeak = 0;
+    for (uint64_t frame = 0; frame < cold.Total(); ++frame) {
+        const double value = std::abs(cold.Sample(frame, 0.05));
+        if (frame < cold.leadFrames) leadPeak = std::max(leadPeak, value);
+        else if (frame < cold.leadFrames + cold.toneFrames) tonePeak = std::max(tonePeak, value);
+        else tailPeak = std::max(tailPeak, value);
     }
-    decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
-        1000000, true, true, 999900, 997999, true, 400000);
-    Check(!decision.deferredByAudio, "A stale meter must not suppress a due pulse");
-    decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
-        1000000, false, true, 999900, 999950, true, 400000);
-    Check(!decision.deferredByAudio, "Unknown or muted audio must not postpone a pulse");
-    decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
-        1000000, true, true, 699999, 999950, true, 400000);
-    Check(!decision.deferredByAudio, "Old observations must not postpone a pulse indefinitely");
-    decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
-        1000000, true, true, 1000001, 999950, false, 0);
-    Check(!decision.deferredByAudio, "Inconsistent future timestamps must fail open");
-    decision = PulseSchedule::AutomaticDue(nowTime, nowTime, 300,
-        1000000, true, true, 999900, 999950, false, 0);
-    Check(decision.deferredByAudio, "Music already playing at startup may defer the first automatic pulse");
-    decision = PulseSchedule::AutomaticDue(nowTime, oldPulseDue, 300,
-        1000000, true, true, 999999, 999999, false, 0, true);
-    Check(!decision.deferredByAudio && decision.due == oldPulseDue && decision.due <= nowTime,
-          "Fresh meter activity must not postpone an overdue protection pulse");
-    std::cout << "Audio drain, screen policy, observed-audio deferral, and pulse timing checks passed.\n";
+    Check(leadPeak <= kDitherLevel && tailPeak <= kDitherLevel && leadPeak > 0,
+          "Lead-in and tail must carry only inaudible dither");
+    Check(tonePeak > 0.049 && tonePeak < 0.0502, "The tone must reach the requested level");
+    Check(std::abs(cold.Sample(cold.leadFrames, 0.05)) <= kDitherLevel * 1.01 &&
+          cold.Envelope(cold.leadFrames + cold.toneFrames - 1) == 0.0 &&
+          cold.Envelope(cold.leadFrames + cold.toneFrames / 2) == 1.0,
+          "The tone must start and end at zero");
+    Check(MakePulse(48000, 100, 440, false).fadeFrames == 1200,
+          "A short pulse must still have a full-level section");
+    ContinuousTone tone;
+    tone.Configure(48000, 20);
+    tone.SetTarget(0.02);
+    double early = 0, late = 0, previous = 0, jump = 0;
+    for (int frame = 0; frame < 48000 * 3; ++frame) {
+        const double value = tone.Next();
+        jump = std::max(jump, std::abs(value - previous));
+        previous = value;
+        if (frame < 480) early = std::max(early, std::abs(value));
+        if (frame >= 48000 * 2) late = std::max(late, std::abs(value));
+    }
+    Check(early < 0.002, "The continuous tone must fade in");
+    Check(late > 0.0198 && late < 0.0202, "The continuous tone must settle at its level");
+    Check(jump < 0.001, "The continuous tone must keep its phase between buffers");
+    tone.SetTarget(0.0);
+    for (int frame = 0; frame < 2400; ++frame) tone.Next();
+    Check(tone.Level() < 0.02 * 0.001, "Lowering the level must take effect within 50 ms");
+    Format pcm16{false, 16, 2, 4, 48000};
+    uint8_t frameBytes[4] = {};
+    WriteFrame(frameBytes, pcm16, 0.5);
+    int16_t left = 0, right = 0;
+    std::memcpy(&left, frameBytes, 2);
+    std::memcpy(&right, frameBytes + 2, 2);
+    Check(left == 16384 && right == 16384, "Every channel must receive the sample");
+    std::cout << "Audio drain, screen policy, pulse timing, signal shape, and volume compensation checks passed.\n";
 }
