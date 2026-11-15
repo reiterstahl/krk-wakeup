@@ -18,7 +18,7 @@
 
 **KRK Wakeup** is a small Windows utility that sends a short audio signal to an output you choose. It was created to prevent KRK GoAux 3 speakers connected over RCA to an SMSL SU-1 from entering standby during long pauses.
 
-> **Status:** v0.4.1 is published in [Releases](https://github.com/reiterstahl/krk-wakeup/releases). In the physical test the GoAux stopped going to standby, both with the continuous tone and with the **continuous level at 0 %** (stream kept open in silence plus 80 Hz, 3000 ms, 1 % pulses every 15 minutes). v0.4.1 also softens the start and stop of the continuous tone. It adds a **continuous signal** (20 Hz at 2 %) on a stream that stays open, so the DAC no longer idles between pulses; pulses wait for an idle DAC to wake, offset the Windows volume, and are no longer deferred by observed audio.
+> **Status:** v0.4.2 is published in [Releases](https://github.com/reiterstahl/krk-wakeup/releases). In the physical test the GoAux stopped going to standby, both with the continuous tone and with the **continuous level at 0 %** (stream kept open in silence plus 80 Hz, 3000 ms, 1 % pulses every 15 minutes). v0.4.1 also softens the start and stop of the continuous tone. It adds a **continuous signal** (20 Hz at 2 %) on a stream that stays open, so the DAC no longer idles between pulses; pulses wait for an idle DAC to wake, offset the Windows volume, and are no longer deferred by observed audio.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: a short signal to keep your speakers ready" width="100%">
@@ -98,7 +98,7 @@ The initial target setup is **Windows 11 x64 → USB → SMSL SU-1 → RCA → K
 
 ## Download and test
 
-1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.4.1-windows-x64.zip`** from **v0.4.1**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+1. Open [Releases](https://github.com/reiterstahl/krk-wakeup/releases), download **`krk-wakeup-v0.4.2-windows-x64.zip`** from **v0.4.2**, and extract its contents to a stable folder. It includes `krk-wakeup.exe`, the license, and documentation. Development builds remain available in [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
 2. If an older version is running, choose **Salir** (Exit) from its notification area menu before replacing the `.exe`. Your settings will remain in place. Run the new version manually once: if startup was enabled, it will update the registered path to this executable.
 3. Open the app and select the playback output corresponding to the **SMSL SU-1**. You can compare its name with **Settings → System → Sound** in Windows.
 4. Set the GoAux speakers to a comfortable volume, then click **Probar tono** (Test tone). It plays for three seconds at 440 Hz and 5% digital level only through the selected output, even if the app is paused. Confirm that you hear it on the GoAux and nowhere else. Next, click **Probar pulso** (Test pulse): it uses the configured automatic signal, initially **80 Hz**, **3000 ms**, and **1%** digital level, with a 15:00 normal interval and a 25:00 estimated standby. Change these values under **Más ajustes** (More settings) if the signal is annoying or fails to prevent standby.

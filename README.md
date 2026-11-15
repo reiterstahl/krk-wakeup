@@ -18,7 +18,7 @@
 
 **KRK Wakeup** es una utilidad pequeña para Windows que envía una señal de audio breve a una salida elegida por el usuario. Nació para evitar que unos KRK GoAux 3 conectados por RCA a un SMSL SU-1 entren en reposo durante pausas largas.
 
-> **Estado:** v0.4.1 publicada en [Releases](https://github.com/reiterstahl/krk-wakeup/releases). En la prueba física los GoAux dejaron de apagarse, tanto con el tono continuo como con **nivel continuo 0 %** (stream abierto en silencio más pulsos de 80 Hz, 3000 ms y 1 % cada 15 minutos). v0.4.1 también suaviza el arranque y el cierre del tono continuo. Añade una **señal continua** (20 Hz al 2 %) en un stream que queda abierto, para que el DAC no entre en reposo entre pulsos; los pulsos esperan a que un DAC inactivo despierte, compensan el volumen de Windows y ya no se aplazan por el audio observado.
+> **Estado:** v0.4.2 publicada en [Releases](https://github.com/reiterstahl/krk-wakeup/releases). En la prueba física los GoAux dejaron de apagarse, tanto con el tono continuo como con **nivel continuo 0 %** (stream abierto en silencio más pulsos de 80 Hz, 3000 ms y 1 % cada 15 minutos). v0.4.1 también suaviza el arranque y el cierre del tono continuo. Añade una **señal continua** (20 Hz al 2 %) en un stream que queda abierto, para que el DAC no entre en reposo entre pulsos; los pulsos esperan a que un DAC inactivo despierte, compensan el volumen de Windows y ya no se aplazan por el audio observado.
 
 <p align="center">
   <img src="assets/banner.svg" alt="KRK Wakeup: una señal breve, tus parlantes listos" width="100%">
@@ -98,7 +98,7 @@ El alcance inicial es **Windows 11 x64 → USB → SMSL SU-1 → RCA → KRK GoA
 
 ## Descargar y probar
 
-1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.4.1-windows-x64.zip`** de la versión **v0.4.1** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
+1. En [Releases](https://github.com/reiterstahl/krk-wakeup/releases), descarga **`krk-wakeup-v0.4.2-windows-x64.zip`** de la versión **v0.4.2** y extrae su contenido en una carpeta estable. Incluye `krk-wakeup.exe`, la licencia y la documentación. Las compilaciones de desarrollo siguen disponibles en [Windows build](https://github.com/reiterstahl/krk-wakeup/actions/workflows/windows.yml).
 2. Si ya ejecutas una versión anterior, usa **Salir** en su icono junto al reloj antes de reemplazar el archivo `.exe`. La configuración se conserva. Ejecuta la versión nueva manualmente una vez: si ya tenías activado el inicio con Windows, actualizará la ruta registrada para el nuevo ejecutable.
 3. Abre la aplicación y selecciona la salida de reproducción que corresponde al **SMSL SU-1**. Puedes comparar su nombre con **Configuración → Sistema → Sonido** de Windows.
 4. Con un volumen cómodo en los GoAux, pulsa **Probar tono**. Reproduce 3 segundos a 440 Hz y 5 % de nivel digital solo por la salida seleccionada, incluso si la aplicación está pausada. Confirma que se oye en los GoAux y no en otro dispositivo. Después, pulsa **Probar pulso**: usa la señal automática configurada, cuyo perfil inicial es **80 Hz**, **3000 ms** y **1 %** de nivel digital, con **Intervalo normal** de 15:00 y **Reposo estimado** de 25:00. Ajusta estos valores en **Más ajustes** si la señal molesta o no evita el reposo.
