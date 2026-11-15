@@ -21,18 +21,18 @@ using Clock = std::chrono::steady_clock;
 
 struct Config {
     std::wstring endpointId;
-    unsigned idleSeconds = 900;
-    unsigned intervalSeconds = 300;
-    unsigned durationMs = 1000;
-    unsigned frequencyHz = 440;
+    unsigned idleSeconds = 1500;
+    unsigned intervalSeconds = 900;
+    unsigned durationMs = 3000;
+    unsigned frequencyHz = 80;
     unsigned levelPercent = 1;
     bool enabled = true;
-    bool startup = false;
+    bool startup = true;
     bool diagnostics = false;
     // Continuous low tone on a stream that stays open (see keep_alive.hpp).
     bool keepAlive = true;
     unsigned keepAliveFrequencyHz = 20;
-    unsigned keepAliveLevelPercent = 2;
+    unsigned keepAliveLevelPercent = 0;
     // Offset the Windows volume so the level leaving the DAC stays constant.
     bool compensateVolume = true;
 };

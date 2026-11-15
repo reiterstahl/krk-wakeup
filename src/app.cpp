@@ -211,17 +211,17 @@ void LoadConfig() {
     GetPrivateProfileStringW(L"Settings", L"EndpointId", L"", id,
                              static_cast<DWORD>(std::size(id)), g_settingsPath.c_str());
     g_config.endpointId = id;
-    g_config.idleSeconds = ReadNumber(L"IdleSeconds", 900, 60, 14400);
-    g_config.intervalSeconds = ReadNumber(L"IntervalSeconds", 300, 10, 3600);
-    g_config.durationMs = ReadNumber(L"DurationMs", 1000, 100, 5000);
-    g_config.frequencyHz = ReadNumber(L"FrequencyHz", 440, 10, 15000);
+    g_config.idleSeconds = ReadNumber(L"IdleSeconds", 1500, 60, 14400);
+    g_config.intervalSeconds = ReadNumber(L"IntervalSeconds", 900, 10, 3600);
+    g_config.durationMs = ReadNumber(L"DurationMs", 3000, 100, 5000);
+    g_config.frequencyHz = ReadNumber(L"FrequencyHz", 80, 10, 15000);
     g_config.levelPercent = ReadNumber(L"LevelPercent", 1, 1, 10);
     g_config.enabled = ReadNumber(L"Enabled", 1, 0, 1) == 1;
-    g_config.startup = ReadNumber(L"Startup", 0, 0, 1) == 1;
+    g_config.startup = ReadNumber(L"Startup", 1, 0, 1) == 1;
     g_config.diagnostics = ReadNumber(L"Diagnostics", 0, 0, 1) == 1;
     g_config.keepAlive = ReadNumber(L"KeepAlive", 1, 0, 1) == 1;
     g_config.keepAliveFrequencyHz = ReadNumber(L"KeepAliveFrequencyHz", 20, 10, 15000);
-    g_config.keepAliveLevelPercent = ReadNumber(L"KeepAliveLevelPercent", 2, 0, 10);
+    g_config.keepAliveLevelPercent = ReadNumber(L"KeepAliveLevelPercent", 0, 0, 10);
     g_config.compensateVolume = ReadNumber(L"CompensateVolume", 1, 0, 1) == 1;
 }
 
